@@ -12,7 +12,7 @@ int main(int argc, char **argv)
 
     // get node handle
     ros::NodeHandle n;
-    ros::Rate loopRate(1.0);
+    ros::Rate loopRate(5.0);
     std::string topicName = "/velodyne_puddle_filter";
 
     ros::Publisher demoPublisher = n.advertise<pcl::PointCloud<pcl::PointXYZ> >(topicName.c_str(),10);
