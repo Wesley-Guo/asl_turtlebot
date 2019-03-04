@@ -14,6 +14,7 @@ from sensor_msgs.msg import PointCloud2
 
 from std_msgs.msg import ColorRGBA
 import matplotlib.pyplot as plt
+from scipy.spatial import ConvexHull
 
 
 '''
@@ -36,16 +37,20 @@ MIN_POINTS = 3
 # look ahead distance to search for puddles
 RHO = 1.5
 
-def compute_ellipse_points(a, b):
-    th = np.arange(0, 2*np.pi+1, 0.2)
-    x = a * np.cos(th)
-    y = b * np.sin(th)
-    return np.stack([x,y])
+# def compute_ellipse_points(a, b):
+#     th = np.arange(0, 2*np.pi+1, 0.2)
+#     x = a * np.cos(th)
+#     y = b * np.sin(th)
+#     return np.stack([x,y])
+def compute_convex_hull(xy_filtered):
+    hull = ConvexHull(xy_filtered)
+    return hull
+
 
 def initialize_puddle_marker():
     puddle_marker = Marker()
     puddle_marker.header.frame_id = "/puddle"
-    puddle_marker.ns = "ellipse"
+    puddle_marker.ns = "chull"
     puddle_marker.type = Marker.LINE_STRIP
     puddle_marker.scale.x = 0.01
     puddle_marker.frame_locked = True
@@ -61,6 +66,9 @@ class PuddleViz:
         self.puddle_mean = None
         self.puddle_viz_pub = rospy.Publisher("/viz/puddle", Marker, queue_size=10)
         self.puddle_marker = initialize_puddle_marker()
+        self.xy_filtered = np.zeros((0,2))
+        # self.y_filtered = np.zeros((0))
+        self.convex_hull = None
         rospy.Subscriber("/velodyne_puddle_filter", PointCloud2, self.velodyne_callback)
 
 
@@ -98,24 +106,28 @@ class PuddleViz:
 
         x_filtered = x_coords[filtered_points]
         y_filtered = y_coords[filtered_points]
+        #trying to use self.x and y filtered for convex hull
+        self.xy_filtered = np.column_stack((x_filtered,y_filtered))
+        # self.y_filtered = y_filtered
         z_filtered = z_coords[filtered_points]
         self.puddle_time = msg.header.stamp
 
         if sum(filtered_points) > MIN_POINTS:
-            self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), np.mean(z_filtered))
-            self.puddle_var = (np.var(x_filtered), np.var(y_filtered), np.var(z_filtered))
+            # self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), np.mean(z_filtered))
+            # self.puddle_var = (np.var(x_filtered), np.var(y_filtered), np.var(z_filtered))
+            self.convex_hull = compute_convex_hull(self.xy_filtered)
 
 
 
     def loop(self):
 
-        if self.puddle_mean is not None:
-            pt = PointStamped()
+        if self.convex_hull is not None:
+            pt = PolygonStamped()
             pt.header.frame_id = '/velodyne'
             pt.header.stamp = self.puddle_time
-            pt.point.x = self.puddle_mean[0]
-            pt.point.y = self.puddle_mean[1]
-            pt.point.z = self.puddle_mean[2]
+            # pt.point.x = self.puddle_mean[0]
+            # pt.point.y = self.puddle_mean[1]
+            # pt.point.z = self.puddle_mean[2]
 
             try:
                 # send a tf transform of the puddle location in the map frame
@@ -128,11 +140,15 @@ class PuddleViz:
                                                        "/map")
                 
                 # make puddle marker
-                ellipse_points = compute_ellipse_points(0.2, 0.2)
-                self.puddle_marker.points = []
-                for i in range(ellipse_points.shape[-1]):
-                    # print("drawing ellipse")
-                    self.puddle_marker.points.append(Point(ellipse_points[0,i], ellipse_points[1,i], 0)) 
+                # ellipse_points = compute_ellipse_points(0.2, 0.2)
+                zeros = np.zeros((self.xy_filtered[self.convex_hull.vertices].shape[0],))
+                pointlist = np.column_stack((self.xy_filtered[self.convex_hull.vertices],zeros))
+                pointlist = np.vstack((pointlist, pointlist[0,:]))
+                self.puddle_marker.polygon.points = pointlist
+                # self.puddle_marker
+                # for i in range(self.xy_filtered[hull.vertices,0].shape[0]):
+                #     print("drawing puddle (convex hull)")
+                #     self.puddle_marker.points.append(Point(ellipse_points[0,i], ellipse_points[1,i], 0)) 
                 self.puddle_viz_pub.publish(self.puddle_marker)
 
             except:
