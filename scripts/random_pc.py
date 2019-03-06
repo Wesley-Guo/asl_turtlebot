@@ -14,10 +14,10 @@ def randomPointCloud():
     pcl_pub = rospy.Publisher("/sample_puddle", PointCloud2, queue_size=10)
     rospy.loginfo("Initializing sample pcl2 publisher node...")
     #give time to roscore to make the connections
-    rate = rospy.Rate(1) # 1hz
+    rate = rospy.Rate(0.1) # 1hz
     while not rospy.is_shutdown():
         
-        cloud_points = np.random.randn(50,3)*100
+        cloud_points = np.random.randn(500,3)*1.5
         cloud_points = cloud_points.tolist()
         #header
         header = std_msgs.msg.Header()

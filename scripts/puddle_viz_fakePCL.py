@@ -52,7 +52,7 @@ def initialize_puddle_marker():
     puddle_marker.header.frame_id = "/puddle"
     puddle_marker.ns = "chull"
     puddle_marker.type = Marker.LINE_STRIP
-    puddle_marker.scale.x = 0.01
+    puddle_marker.scale.x = 1
     puddle_marker.frame_locked = True
     puddle_marker.color.g = 1
     puddle_marker.color.a = 1
@@ -77,6 +77,7 @@ class PuddleViz:
         This is an example of how to process PointCloud2 data.
         pc2.read_points creates an _iterator_ object.
         '''
+        print('recieved point cloud data')
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
         num_points = len(list(lidar_info))
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
@@ -103,19 +104,23 @@ class PuddleViz:
 
         # filtered points
         filtered_points = pts_within_range & pts_within_angle
+        # filtered_points = pts_within_range
 
         x_filtered = x_coords[filtered_points]
         y_filtered = y_coords[filtered_points]
         #trying to use self.x and y filtered for convex hull
         self.xy_filtered = np.column_stack((x_filtered,y_filtered))
+        # print(self.xy_filtered)
         # self.y_filtered = y_filtered
         z_filtered = z_coords[filtered_points]
         self.puddle_time = msg.header.stamp
 
         if sum(filtered_points) > MIN_POINTS:
-            # self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), np.mean(z_filtered))
+            self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), np.mean(z_filtered))
             # self.puddle_var = (np.var(x_filtered), np.var(y_filtered), np.var(z_filtered))
             self.convex_hull = compute_convex_hull(self.xy_filtered)
+            # print('chull_verts')
+            # print(self.convex_hull.vertices)
 
 
 
@@ -131,9 +136,9 @@ class PuddleViz:
 
             try:
                 # send a tf transform of the puddle location in the map frame
-                self.tf_listener.waitForTransform("/map", '/velodyne', self.puddle_time, rospy.Duration(.05))
-                puddle_map_pt = self.tf_listener.transformPoint("/map", pt)
-                self.puddle_broadcaster.sendTransform((puddle_map_pt.point.x, puddle_map_pt.point.y, puddle_map_pt.point.z), 
+                # self.tf_listener.waitForTransform("/map", '/velodyne', self.puddle_time, rospy.Duration(.05))
+                # puddle_map_pt = self.tf_listener.transformPoint("/map", pt)
+                self.puddle_broadcaster.sendTransform((self.puddle_mean[0], self.puddle_mean[1], self.puddle_mean[2]), 
                                                        [0, 0, 0, 1],
                                                        self.puddle_time,
                                                        "/puddle",
@@ -144,7 +149,8 @@ class PuddleViz:
                 zeros = np.zeros((self.xy_filtered[self.convex_hull.vertices].shape[0],))
                 pointlist = np.column_stack((self.xy_filtered[self.convex_hull.vertices],zeros))
                 pointlist = np.vstack((pointlist, pointlist[0,:]))
-                self.puddle_marker.polygon.points = pointlist
+                print(pointlist)
+                self.puddle_marker.polygon.points = pointlist*10
                 # self.puddle_marker
                 # for i in range(self.xy_filtered[hull.vertices,0].shape[0]):
                 #     print("drawing puddle (convex hull)")
