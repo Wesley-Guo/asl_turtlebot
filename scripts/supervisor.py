@@ -6,6 +6,8 @@ from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from asl_turtlebot.msg import DetectedObject
 import tf
+import tf.msg
+from tf.transformations import quaternion_from_euler, euler_from_quaternion
 import math
 from enum import Enum
 
@@ -38,6 +40,8 @@ class Mode(Enum):
     CROSS = 4
     NAV = 5
     MANUAL = 6
+    EXPLORE = 7
+
 
 
 print "supervisor settings:\n"
@@ -61,10 +65,17 @@ class Supervisor:
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         # command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.objects_dict = {}
 
         # subscribers
         # stop sign detector
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
+        #food/house detector
+        rospy.Subscriber('/detector/pizza', DetectedObject, self.pizza_detected_callback)
+        rospy.Subscriber('/detector/broccoli', DetectedObject, self.broccoli_detected_callback)
+        rospy.Subscriber('/detector/elephant', DetectedObject, self.elephant_detected_callback)
+        rospy.Subscriber('/detector/giraffe', DetectedObject, self.giraffe_detected_callback)
+        rospy.Subscriber('')
         # high-level navigation pose
         rospy.Subscriber('/nav_pose', Pose2D, self.nav_pose_callback)
         # if using gazebo, we have access to perfect state
@@ -118,10 +129,43 @@ class Supervisor:
 
         # distance of the stop sign
         dist = msg.distance
-
+        print("stop sign distance")
+		print(dist)
         # if close enough and in nav mode, stop
         if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV:
             self.init_stop_sign()
+
+    #Adam edit - detector for food 1 - TODO: change to actual 
+    def pizza_detected_callback(self, msg):
+    	dist = msg.distance
+    	print("pizza distance")
+    	print(dist)
+    	self.tf_listener.waitForTransform("/map", "/camera", rospy.get_rostime(), rospy.Duration(.05))
+    	#todo - store TF frame in dict
+
+    def broccoli_detected_callback(self,msg):
+    	dist = msg.distance
+    	print("broccoli distance")
+    	print(dist)
+
+    	#todo store TF frame in dict
+
+    def elephant_detected_callback(self, msg):
+
+    	dist = msg.distance
+    	print("elephant distance")
+    	print(dist)
+
+    	#todo store TF frame in dict
+    def giraffe_detected_callback(self,msg):
+    	dist = msg.distance
+    	print("giraffe distance")
+    	print(dist)
+
+    	#todo store TF frame in dict
+
+
+
 
     def go_to_pose(self):
         """ sends the current desired pose to the pose controller """
@@ -159,6 +203,11 @@ class Supervisor:
 
         self.stop_sign_start = rospy.get_rostime()
         self.mode = Mode.STOP
+
+    def init_explore_start(self):
+    	self.mode = EXPLORE
+    	self.explore_start = rospy.get_rostime()
+
 
     def has_stopped(self):
         """ checks if stop sign maneuver is over """

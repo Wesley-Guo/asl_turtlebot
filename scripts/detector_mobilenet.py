@@ -169,7 +169,8 @@ class Detector:
 
         num_m, dist = 0, 0
         for m in meas:
-            if m>0 and m<float('Inf'):
+            # if m>0.0 and m<float('Inf'): # TARIQ EDIT
+            if m > 0.1 and m<3.0
                 dist += m
                 num_m += 1
         if num_m>0:

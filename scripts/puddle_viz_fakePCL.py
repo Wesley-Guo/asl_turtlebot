@@ -124,7 +124,8 @@ class PuddleViz:
         if self.convex_hull is not None:
             if self.new_puddle:
                 # send fixed transform to puddle center for simulated data
-                self.puddle_broadcaster.sendTransform((self.puddle_mean[0], self.puddle_mean[1], self.puddle_mean[2]), 
+                self.puddle_broadcaster.sendTransform((self.puddle_mean[0], self.puddle_mean[1], 
+                                                       self.puddle_mean[2]), 
                                                        [0,0,0,1],
                                                        self.puddle_time,
                                                        "/puddle",
