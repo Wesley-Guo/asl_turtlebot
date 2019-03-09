@@ -48,6 +48,7 @@ KDY = 1.5
 SMOOTH = .01
 
 PUDDLE_TOLERANCE = 0.1
+PUDDLE_SIZE = 3 #MUST BE ODD NUMBER
 
 class Navigator:
 
@@ -145,12 +146,16 @@ class Navigator:
             self.astar_occupancy.probs[index] = 93
             #TODO
             #Use this function to dilate each puddle from center point
-            #self.fill_in_puddle(index)
+            self.fill_in_puddle(puddle_row,puddle_col)
 
 
-    def fill_in_puddle(self,idx):
+    def fill_in_puddle(self,puddle_row, puddle_col):
         #Use either manual dilation or SKImage
         #Possibly use DBScan for clustering
+        for i in range(PUDDLE_SIZE):
+            for j in range(PUDDLE_SIZE):
+                index = self.astar_occupancy.width*(puddle_row-(PUDDLE_SIZE/2)+i)+(puddle_col-(PUDDLE_SIZE/2)+j)
+                self.astar_occupancy.probs[index] = 93
 
 
     def close_to_end_location(self):
@@ -206,7 +211,14 @@ class Navigator:
             state_max = self.snap_to_grid((self.plan_horizon, self.plan_horizon))
             x_init = self.snap_to_grid((self.x, self.y))
             x_goal = self.snap_to_grid((self.x_g, self.y_g))
-            problem = AStar(state_min,state_max,x_init,x_goal,self.occupancy,self.plan_resolution)
+
+            #--- Add known puddles to occupancy grid ---
+            if self.puddle_list:
+                self.puddle_to_occupancy()
+                problem = AStar(state_min,state_max,x_init,x_goal,self.astar_occupancy,self.plan_resolution)
+            #-------------------------------------------
+            else:
+                problem = AStar(state_min,state_max,x_init,x_goal,self.occupancy,self.plan_resolution)
 
             rospy.loginfo("Navigator: Computing navigation plan")
             if problem.solve():
