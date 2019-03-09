@@ -33,6 +33,9 @@ STOP_MIN_DIST = .5
 # time taken to cross an intersection
 CROSSING_TIME = 3
 
+# time to autonomously explore
+CROSSING_TIME = 60
+
 # state machine modes, not all implemented
 class Mode(Enum):
     IDLE = 1
@@ -43,6 +46,9 @@ class Mode(Enum):
     MANUAL = 6
     EXPLORE = 7
 
+class Phase(Enum):
+    EXPLORE = 1
+    DELIVER = 2
 
 
 print "supervisor settings:\n"
@@ -58,6 +64,7 @@ class Supervisor:
         self.y = 0
         self.theta = 0
         self.mode = Mode.IDLE
+        self.phase = Phase.EXPLORE
         self.last_mode_printed = None
         self.trans_listener = tf.TransformListener()
         # command pose for controller
@@ -67,6 +74,7 @@ class Supervisor:
         # command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         self.objects_dict = {}
+        self.delivery_requests = []
 
         # subscribers
         # stop sign detector
@@ -84,6 +92,8 @@ class Supervisor:
             rospy.Subscriber('/gazebo/model_states', ModelStates, self.gazebo_callback)
         # we can subscribe to nav goal click
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
+        # deliveries subscriber
+        rospy.Subscriber('/delivery_request', String, self.delivery_request_callback)
         
     def gazebo_callback(self, msg):
         pose = msg.pose[msg.name.index("turtlebot3_burger")]
@@ -298,6 +308,9 @@ class Supervisor:
     	self.th_g = 0
     	self.mode = Mode.NAV
 
+    def delivery_request_callback(self, msg):
+        self.delivery_requests = msg.split(',')
+
     def go_to_pose(self):
         """ sends the current desired pose to the pose controller """
 
@@ -337,8 +350,15 @@ class Supervisor:
 
     def init_explore_start(self):
     	self.explore_start = rospy.get_rostime()
+        self.x_g = float('inf')
+        self.y_g = float('inf')
+        self.theta = float('inf')
     	self.mode = Mode.EXPLORE
+        self.nav_to_pose
 
+    def has_explored(self):
+        """ checks if exploration is over """
+        return (self.mode == Mode.EXPLORE and (rospy.get_rostime()-self.explore_start)>rospy.Duration.from_sec(EXPLORE_TIME))
 
     def has_stopped(self):
         """ checks if stop sign maneuver is over """
@@ -353,7 +373,6 @@ class Supervisor:
 
     def has_crossed(self):
         """ checks if crossing maneuver is over """
-
         return (self.mode == Mode.CROSS and (rospy.get_rostime()-self.cross_start)>rospy.Duration.from_sec(CROSSING_TIME))
 
     def loop(self):
@@ -381,6 +400,7 @@ class Supervisor:
         if self.mode == Mode.IDLE:
             # send zero velocity
             self.stay_idle()
+            if
 
         elif self.mode == Mode.POSE:
             # moving towards a desired pose
@@ -404,10 +424,18 @@ class Supervisor:
                 self.nav_to_pose()
 
         elif self.mode == Mode.NAV:
+            # 
             if self.close_to(self.x_g,self.y_g,self.theta_g):
                 self.mode = Mode.IDLE
             else:
                 self.nav_to_pose()
+
+        elif self.mode == Mode.EXPLORE:
+            self.init_explore_start()
+            if self.has_explored():
+                self.Mode = Mode.IDLE
+            else:
+                pass
 
         else:
             raise Exception('This mode is not supported: %s'
