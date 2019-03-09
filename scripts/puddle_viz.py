@@ -60,6 +60,7 @@ class PuddleViz:
         self.tf_listener = tf.TransformListener()
         self.puddle_mean = None
         self.puddle_viz_pub = rospy.Publisher("/viz/puddle", Marker, queue_size=10)
+        self.puddle_world_pub = rospy.Publisher("puddle_world", PointStamped, queue_size=10)
         self.puddle_marker = initialize_puddle_marker()
         rospy.Subscriber("/velodyne_puddle_filter", PointCloud2, self.velodyne_callback)
 
@@ -95,6 +96,7 @@ class PuddleViz:
 
         # filtered points
         filtered_points = pts_within_range & pts_within_angle
+        #grab filtered points here to recognize multiple puddles
 
         x_filtered = x_coords[filtered_points]
         y_filtered = y_coords[filtered_points]
@@ -133,6 +135,7 @@ class PuddleViz:
                 for i in range(ellipse_points.shape[-1]):
                     # print("drawing ellipse")
                     self.puddle_marker.points.append(Point(ellipse_points[0,i], ellipse_points[1,i], 0)) 
+                self.puddle_world.publish(puddle_map_pt)
                 self.puddle_viz_pub.publish(self.puddle_marker)
 
             except:

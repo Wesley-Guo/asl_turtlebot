@@ -13,6 +13,7 @@ from astar import AStar
 from grids import StochOccupancyGrid2D
 import scipy.interpolate
 import matplotlib.pyplot as plt
+import copy
 
 
 # threshold at which navigator switches
@@ -46,6 +47,8 @@ KDY = 1.5
 # smoothing condition (see splrep documentation)
 SMOOTH = .01
 
+PUDDLE_TOLERANCE = 0.1
+
 class Navigator:
 
     def __init__(self):
@@ -70,6 +73,7 @@ class Navigator:
         self.map_origin = [0,0]
         self.map_probs = []
         self.occupancy = None
+        self.astar_occupancy = None  #This is the occupancy grid that actually gets passed to astar
         self.occupancy_updated = False
 
         # plan parameters
@@ -79,6 +83,9 @@ class Navigator:
         # variables for the controller
         self.V_prev = 0
         self.V_prev_t = rospy.get_rostime()
+        
+        #dictionary for list of puddles
+        self.puddle_list = []
 
         self.nav_path_pub = rospy.Publisher('/cmd_path', Path, queue_size=10)
         self.nav_pose_pub = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
@@ -90,6 +97,7 @@ class Navigator:
         rospy.Subscriber('/map', OccupancyGrid, self.map_callback)
         rospy.Subscriber('/map_metadata', MapMetaData, self.map_md_callback)
         rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_nav_callback)
+        rospy.Subscriber('puddle_world', PointStamped, self.puddle_callback)
 
     def cmd_nav_callback(self, data):
         self.x_g = data.x
@@ -114,6 +122,36 @@ class Navigator:
                                                   8,
                                                   self.map_probs)
             self.occupancy_updated = True
+    
+    def puddle_callback(self,msg):
+       puddle_repeated = False
+       if self.puddle_list:
+            for puddle in self.puddle_list:
+                puddle_x_difference = puddle[0] - msg.point.x
+                puddle_y_difference = puddle[1] - msg.point.y
+                if (puddle_x_difference < PUDDLE_TOLERANCE) and (puddle_y_difference < PUDDLE_TOLERANCE):
+                    puddle_repeated = True
+                    break
+        if not puddle_repeated:
+            self.puddle_list.append([msg.point.x,msg.point.y])
+    
+    def puddle_to_occupancy(self):
+        self.astar_occupancy = copy.copy(self.occupancy)
+        for puddle in self.puddle_list:
+            raw_x_occ = (puddle[0]-self.astar.occupancy.origin_x)/self.astar_occupancy.resolution
+            raw_y_occ = (puddle[1]-self.astar.occupancy.origin_y)/self.astar_occupancy.resolution
+            (puddle_row,puddle_col) = self.astar_occupancy.snap_to_grid([raw_x_occ,raw_y_occ])
+            index = self.astar_occupancy.width*puddle_row+puddle_col
+            self.astar_occupancy.probs[index] = 93
+            #TODO
+            #Use this function to dilate each puddle from center point
+            #self.fill_in_puddle(index)
+
+
+    def fill_in_puddle(self,idx):
+        #Use either manual dilation or SKImage
+        #Possibly use DBScan for clustering
+
 
     def close_to_end_location(self):
         return (abs(self.x-self.x_g)<END_POS_THRESH and abs(self.y-self.y_g)<END_POS_THRESH)
