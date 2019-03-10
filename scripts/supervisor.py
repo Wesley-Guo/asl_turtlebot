@@ -75,16 +75,20 @@ class Supervisor:
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         self.objects_dict = {}
         self.delivery_requests = []
+        self.home_base = "elephant"
+        self.home_base_dict = {}
 
         # subscribers
         # stop sign detector
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         #food/house detector
-        rospy.Subscriber('/detector/pizza', DetectedObject, self.pizza_detected_callback)
-        rospy.Subscriber('/detector/broccoli', DetectedObject, self.broccoli_detected_callback)
-        rospy.Subscriber('/detector/elephant', DetectedObject, self.elephant_detected_callback)
-        rospy.Subscriber('/detector/giraffe', DetectedObject, self.giraffe_detected_callback)
-        rospy.Subscriber('/delivery/getFood', Delivery, self.delivery_callback)
+        # rospy.Subscriber('/detector/pizza', DetectedObject, self.pizza_detected_callback)
+        # rospy.Subscriber('/detector/broccoli', DetectedObject, self.broccoli_detected_callback)
+        # rospy.Subscriber('/detector/elephant', DetectedObject, self.elephant_detected_callback)
+        # rospy.Subscriber('/detector/giraffe', DetectedObject, self.giraffe_detected_callback)
+        # rospy.Subscriber('/delivery/getFood', Delivery, self.delivery_callback)
+        rospy.Subscriber('/detector/objects', DetectedObjectList, self.object_list_callback)
+        rospy.Subscriber('/delivery_request', String, self.delivery_request_callback)
         # high-level navigation pose
         rospy.Subscriber('/nav_pose', Pose2D, self.nav_pose_callback)
         # if using gazebo, we have access to perfect state
@@ -146,167 +150,206 @@ class Supervisor:
         if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV:
             self.init_stop_sign()
 
-    #Adam edit - detector for food 1 - TODO: change to actual 
-    def pizza_detected_callback(self, msg):
-    	dist = msg.distance
-    	print("pizza distance")
-    	print(dist)
-    	theta_left = msg.thetaleft
-    	theta_right = msg.thetaright
-    	theta_mid = 0
-    	if theta_left >= theta_right:
-    		theta_mid = (theta_left+theta_right)/2
-    	else:
-    		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+    def object_list_callback(self, msg):
+        for i in range(len(msg.objects)):
+            add_to_dict(msg.objects[i], msg.ob_msgs[i])
 
-    	pt = PointStamped()
+    def add_to_dict(object_name, object_msg):
+        dist = object_msg.distance
+        print( object_name + " distance")
+        print(dist)
+        theta_left = object_msg.thetaleft
+        theta_right = object_msg.thetaright
+        theta_mid = 0
+        if theta_left >= theta_right:
+            theta_mid = (theta_left+theta_right)/2
+        else:
+            theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+
+        pt = PointStamped()
         pt.header.frame_id = '/camera'
         pt.header.stamp = rospy.get_rostime()
         pt.point.x = dist*np.sin(theta_mid)
         pt.point.y = 0
         pt.point.z = dist*np.cos(theta_mid)
 
-    	pizza_map_pt = self.tf_listener.transformPoint("/map", pt)
+        object_map_pt = self.tf_listener.transformPoint("/map", pt)
 
-    	if self.objects_dict["pizza"]:
-    		prevPoint = self.objects_dict["pizza"]
-    		newPointVec = [pizza_map_pt.point.x+prevPoint.point.x, pizza_map_pt.point.y + 
-    							prevPoint.point.y, pizza_map_pt.point.z + prevPoint.point.z]/2
-    		newPoint = PointStamped()
-    		newPoint.header.frame_id = '/camera'
-	        newPoint.header.stamp = rospy.get_rostime()
-	        newPoint.point.x = newPointVec[0]
-	        newPoint.point.y = newPointVec[1]
-	        newPoint.point.z = newPointVec[2]
-	        self.objects_dict["pizza"] = newPoint
-	    else:
-	    	self.objects_dict["pizza"] = pizza_map_pt
+        if object_name in self.objects_dict:
+            prevCount = self.objects_dict[object_name][1]
+            prevPoint = self.objects_dict[object_name][0]
+            newPointVec = [((object_map_pt.point.x+(prevPoint.point.x*prevCount))/(prevCount+1)), 
+                            ((object_map_pt.point.y+(prevPoint.point.y*prevCount))/(prevCount+1)), 
+                                ((object_map_pt.point.z+(prevPoint.point.z*prevCount))/(prevCount+1))]
+            newPoint = PointStamped()
+            newPoint.header.frame_id = '/camera'
+            newPoint.header.stamp = rospy.get_rostime()
+            newPoint.point.x = newPointVec[0]
+            newPoint.point.y = newPointVec[1]
+            newPoint.point.z = newPointVec[2]
+            self.objects_dict[object_name] = (newPoint, prevCount+ 1)
+        else:
+            self.objects_dict[object_name] = (object_map_pt, 0)
+        if self.home_base in self.objects_dict:
+            self.home_base_dict[self.home_base] = self.objects_dict[self.home_base]
+
+
+    #Adam edit - detector for food 1 - TODO: change to actual 
+    # def pizza_detected_callback(self, msg):
+    # 	dist = msg.distance
+    # 	print("pizza distance")
+    # 	print(dist)
+    # 	theta_left = msg.thetaleft
+    # 	theta_right = msg.thetaright
+    # 	theta_mid = 0
+    # 	if theta_left >= theta_right:
+    # 		theta_mid = (theta_left+theta_right)/2
+    # 	else:
+    # 		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+
+    # 	pt = PointStamped()
+    #     pt.header.frame_id = '/camera'
+    #     pt.header.stamp = rospy.get_rostime()
+    #     pt.point.x = dist*np.sin(theta_mid)
+    #     pt.point.y = 0
+    #     pt.point.z = dist*np.cos(theta_mid)
+
+    # 	pizza_map_pt = self.tf_listener.transformPoint("/map", pt)
+
+    # 	if self.objects_dict["pizza"]:
+    # 		prevPoint = self.objects_dict["pizza"]
+    # 		newPointVec = [pizza_map_pt.point.x+prevPoint.point.x, pizza_map_pt.point.y + 
+    # 							prevPoint.point.y, pizza_map_pt.point.z + prevPoint.point.z]/2
+    # 		newPoint = PointStamped()
+    # 		newPoint.header.frame_id = '/camera'
+	   #      newPoint.header.stamp = rospy.get_rostime()
+	   #      newPoint.point.x = newPointVec[0]
+	   #      newPoint.point.y = newPointVec[1]
+	   #      newPoint.point.z = newPointVec[2]
+	   #      self.objects_dict["pizza"] = newPoint
+	   #  else:
+	   #  	self.objects_dict["pizza"] = pizza_map_pt
 
 
     	#todo - store TF frame in dict
 
-    def broccoli_detected_callback(self,msg):
-    	dist = msg.distance
-    	print("broccoli distance")
-    	print(dist)
-    	theta_left = msg.thetaleft
-    	theta_right = msg.thetaright
-    	theta_mid = 0
-    	if theta_left >= theta_right:
-    		theta_mid = (theta_left+theta_right)/2
-    	else:
-    		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+    # def broccoli_detected_callback(self,msg):
+    # 	dist = msg.distance
+    # 	print("broccoli distance")
+    # 	print(dist)
+    # 	theta_left = msg.thetaleft
+    # 	theta_right = msg.thetaright
+    # 	theta_mid = 0
+    # 	if theta_left >= theta_right:
+    # 		theta_mid = (theta_left+theta_right)/2
+    # 	else:
+    # 		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
 
-    	pt = PointStamped()
-        pt.header.frame_id = '/camera'
-        pt.header.stamp = rospy.get_rostime()
-        pt.point.x = dist*np.sin(theta_mid)
-        pt.point.y = 0
-        pt.point.z = dist*np.cos(theta_mid)
+    # 	pt = PointStamped()
+    #     pt.header.frame_id = '/camera'
+    #     pt.header.stamp = rospy.get_rostime()
+    #     pt.point.x = dist*np.sin(theta_mid)
+    #     pt.point.y = 0
+    #     pt.point.z = dist*np.cos(theta_mid)
 
-    	broccoli_map_pt = self.tf_listener.transformPoint("/map", pt)
+    # 	broccoli_map_pt = self.tf_listener.transformPoint("/map", pt)
 
-    	if self.objects_dict["broccoli"]:
-    		prevPoint = self.objects_dict["broccoli"]
-    		newPointVec = [broccoli_map_pt.point.x+prevPoint.point.x, broccoli_map_pt.point.y + 
-    							prevPoint.point.y, broccoli_map_pt.point.z + prevPoint.point.z]/2
-    		newPoint = PointStamped()
-    		newPoint.header.frame_id = '/camera'
-	        newPoint.header.stamp = rospy.get_rostime()
-	        newPoint.point.x = newPointVec[0]
-	        newPoint.point.y = newPointVec[1]
-	        newPoint.point.z = newPointVec[2]
-	        self.objects_dict["broccoli"] = newPoint
-	    else:
-	    	self.objects_dict["broccoli"] = broccoli_map_pt
+    # 	if self.objects_dict["broccoli"]:
+    # 		prevPoint = self.objects_dict["broccoli"]
+    # 		newPointVec = [broccoli_map_pt.point.x+prevPoint.point.x, broccoli_map_pt.point.y + 
+    # 							prevPoint.point.y, broccoli_map_pt.point.z + prevPoint.point.z]/2
+    # 		newPoint = PointStamped()
+    # 		newPoint.header.frame_id = '/camera'
+	   #      newPoint.header.stamp = rospy.get_rostime()
+	   #      newPoint.point.x = newPointVec[0]
+	   #      newPoint.point.y = newPointVec[1]
+	   #      newPoint.point.z = newPointVec[2]
+	   #      self.objects_dict["broccoli"] = newPoint
+	   #  else:
+	   #  	self.objects_dict["broccoli"] = broccoli_map_pt
 
 
 
+    # 	#todo store TF frame in dict
+
+    # def elephant_detected_callback(self, msg):
+
+    # 	dist = msg.distance
+    # 	print("elephant distance")
+    # 	print(dist)
+    # 	theta_left = msg.thetaleft
+    # 	theta_right = msg.thetaright
+    # 	theta_mid = 0
+    # 	if theta_left >= theta_right:
+    # 		theta_mid = (theta_left+theta_right)/2
+    # 	else:
+    # 		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+
+    # 	pt = PointStamped()
+    #     pt.header.frame_id = '/camera'
+    #     pt.header.stamp = rospy.get_rostime()
+    #     pt.point.x = dist*np.sin(theta_mid)
+    #     pt.point.y = 0
+    #     pt.point.z = dist*np.cos(theta_mid)
+
+    # 	elephant_map_pt = self.tf_listener.transformPoint("/map", pt)
+
+    # 	if self.objects_dict["elephant"]:
+    # 		prevPoint = self.objects_dict["elephant"]
+    # 		newPointVec = [elephant_map_pt.point.x+prevPoint.point.x, elephant_map_pt.point.y + 
+    # 							prevPoint.point.y, elephant_map_pt.point.z + prevPoint.point.z]/2
+    # 		newPoint = PointStamped()
+    # 		newPoint.header.frame_id = '/camera'
+	   #      newPoint.header.stamp = rospy.get_rostime()
+	   #      newPoint.point.x = newPointVec[0]
+	   #      newPoint.point.y = newPointVec[1]
+	   #      newPoint.point.z = newPointVec[2]
+	   #      self.objects_dict["elephant"] = newPoint
+	   #  else:
+	   #  	self.objects_dict["elephant"] = elephant_map_pt
+
+
+    # 	#todo store TF frame in dict
+    # def giraffe_detected_callback(self,msg):
+    # 	dist = msg.distance
+    # 	print("giraffe distance")
+    # 	print(dist)
+    # 	theta_left = msg.thetaleft
+    # 	theta_right = msg.thetaright
+    # 	theta_mid = 0
+    # 	if theta_left >= theta_right:
+    # 		theta_mid = (theta_left+theta_right)/2
+    # 	else:
+    # 		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+
+    # 	pt = PointStamped()
+    #     pt.header.frame_id = '/camera'
+    #     pt.header.stamp = rospy.get_rostime()
+    #     pt.point.x = dist*np.sin(theta_mid)
+    #     pt.point.y = 0
+    #     pt.point.z = dist*np.cos(theta_mid)
+
+    # 	giraffe_map_pt = self.tf_listener.transformPoint("/map", pt)
+
+    # 	if self.objects_dict["giraffe"]:
+    # 		prevPoint = self.objects_dict["giraffe"]
+    # 		newPointVec = [giraffe_map_pt.point.x+prevPoint.point.x, giraffe_map_pt.point.y + 
+    # 							prevPoint.point.y, giraffe_map_pt.point.z + prevPoint.point.z]/2
+    # 		newPoint = PointStamped()
+    # 		newPoint.header.frame_id = '/camera'
+	   #      newPoint.header.stamp = rospy.get_rostime()
+	   #      newPoint.point.x = newPointVec[0]
+	   #      newPoint.point.y = newPointVec[1]
+	   #      newPoint.point.z = newPointVec[2]
+	   #      self.objects_dict["giraffe"] = newPoint
+	   #  else:
+	   #  	self.objects_dict["giraffe"] = giraffe_map_pt
     	#todo store TF frame in dict
 
-    def elephant_detected_callback(self, msg):
 
-    	dist = msg.distance
-    	print("elephant distance")
-    	print(dist)
-    	theta_left = msg.thetaleft
-    	theta_right = msg.thetaright
-    	theta_mid = 0
-    	if theta_left >= theta_right:
-    		theta_mid = (theta_left+theta_right)/2
-    	else:
-    		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
-
-    	pt = PointStamped()
-        pt.header.frame_id = '/camera'
-        pt.header.stamp = rospy.get_rostime()
-        pt.point.x = dist*np.sin(theta_mid)
-        pt.point.y = 0
-        pt.point.z = dist*np.cos(theta_mid)
-
-    	elephant_map_pt = self.tf_listener.transformPoint("/map", pt)
-
-    	if self.objects_dict["elephant"]:
-    		prevPoint = self.objects_dict["elephant"]
-    		newPointVec = [elephant_map_pt.point.x+prevPoint.point.x, elephant_map_pt.point.y + 
-    							prevPoint.point.y, elephant_map_pt.point.z + prevPoint.point.z]/2
-    		newPoint = PointStamped()
-    		newPoint.header.frame_id = '/camera'
-	        newPoint.header.stamp = rospy.get_rostime()
-	        newPoint.point.x = newPointVec[0]
-	        newPoint.point.y = newPointVec[1]
-	        newPoint.point.z = newPointVec[2]
-	        self.objects_dict["elephant"] = newPoint
-	    else:
-	    	self.objects_dict["elephant"] = elephant_map_pt
-
-
-    	#todo store TF frame in dict
-    def giraffe_detected_callback(self,msg):
-    	dist = msg.distance
-    	print("giraffe distance")
-    	print(dist)
-    	theta_left = msg.thetaleft
-    	theta_right = msg.thetaright
-    	theta_mid = 0
-    	if theta_left >= theta_right:
-    		theta_mid = (theta_left+theta_right)/2
-    	else:
-    		theta_mid = (theta_left + (theta_right - 2*np.pi))/2
-
-    	pt = PointStamped()
-        pt.header.frame_id = '/camera'
-        pt.header.stamp = rospy.get_rostime()
-        pt.point.x = dist*np.sin(theta_mid)
-        pt.point.y = 0
-        pt.point.z = dist*np.cos(theta_mid)
-
-    	giraffe_map_pt = self.tf_listener.transformPoint("/map", pt)
-
-    	if self.objects_dict["giraffe"]:
-    		prevPoint = self.objects_dict["giraffe"]
-    		newPointVec = [giraffe_map_pt.point.x+prevPoint.point.x, giraffe_map_pt.point.y + 
-    							prevPoint.point.y, giraffe_map_pt.point.z + prevPoint.point.z]/2
-    		newPoint = PointStamped()
-    		newPoint.header.frame_id = '/camera'
-	        newPoint.header.stamp = rospy.get_rostime()
-	        newPoint.point.x = newPointVec[0]
-	        newPoint.point.y = newPointVec[1]
-	        newPoint.point.z = newPointVec[2]
-	        self.objects_dict["giraffe"] = newPoint
-	    else:
-	    	self.objects_dict["giraffe"] = giraffe_map_pt
-    	#todo store TF frame in dict
-
-
-    def delivery_callback(self,msg):
-    	foodType = msg[0]
-    	deliveryLocation = msg[1]
-    	foodLocation = self.objects_dict[foodType]
-    	self.x_g = foodLocation.point.x
-    	self.y_g = foodLocation.point.y
-    	self.th_g = 0
-    	self.mode = Mode.NAV
+    def delivery_request_callback(self,msg):
+    	self.cmd_list = msg.split(',')
+    	
 
     def delivery_request_callback(self, msg):
         self.delivery_requests = msg.split(',')
@@ -414,7 +457,7 @@ class Supervisor:
             if self.has_stopped():
                 self.init_crossing()
             else:
-                pass
+                self.stay_idle()
 
         elif self.mode == Mode.CROSS:
             # crossing an intersection
