@@ -14,6 +14,7 @@ from grids import StochOccupancyGrid2D
 import scipy.interpolate
 import matplotlib.pyplot as plt
 import copy
+from skimage.morphology import square
 
 
 # threshold at which navigator switches
@@ -49,6 +50,7 @@ SMOOTH = .01
 
 PUDDLE_TOLERANCE = 0.1
 PUDDLE_SIZE = 3 #MUST BE ODD NUMBER
+WALL_DILATION_SIZE = 3
 
 class Navigator:
 
@@ -137,26 +139,35 @@ class Navigator:
             self.puddle_list.append([msg.point.x,msg.point.y])
     
     def puddle_to_occupancy(self):
-        self.astar_occupancy = copy.copy(self.occupancy)
         for puddle in self.puddle_list:
             raw_x_occ = (puddle[0]-self.astar.occupancy.origin_x)/self.astar_occupancy.resolution
             raw_y_occ = (puddle[1]-self.astar.occupancy.origin_y)/self.astar_occupancy.resolution
             (puddle_row,puddle_col) = self.astar_occupancy.snap_to_grid([raw_x_occ,raw_y_occ])
-            index = self.astar_occupancy.width*puddle_row+puddle_col
+            puddle_rowid = puddle_row/self.astar_occupancy.resolution
+            puddle_colid = puddle_col/self.astar_occupancy.resolution
+            index = self.astar_occupancy.width*puddle_rowid+puddle_colid
             self.astar_occupancy.probs[index] = 93
-            #TODO
-            #Use this function to dilate each puddle from center point
-            self.fill_in_puddle(puddle_row,puddle_col)
+            self.fill_in_puddle(puddle_rowid,puddle_colid)
 
 
-    def fill_in_puddle(self,puddle_row, puddle_col):
+    def fill_in_puddle(self,puddle_rowid, puddle_colid):
         #Use either manual dilation or SKImage
         #Possibly use DBScan for clustering
         for i in range(PUDDLE_SIZE):
             for j in range(PUDDLE_SIZE):
-                index = self.astar_occupancy.width*(puddle_row-(PUDDLE_SIZE/2)+i)+(puddle_col-(PUDDLE_SIZE/2)+j)
-                self.astar_occupancy.probs[index] = 93
+                #TODO edge case if center of puddle is at edge of map
+                index = self.astar_occupancy.width*(puddle_rowid-(PUDDLE_SIZE/2)+i)+(puddle_colid-(PUDDLE_SIZE/2)+j)
+                if (not index < 0) and (not index >= self.astar_occupancy.probs.length):
+                    self.astar_occupancy.probs[index] = 93
 
+    def conflate_obstacles(self):
+        #TODO
+        #Conflate obstacles in occupancy grid
+        occupancy = np.array(copy.copy(self.astar_occupancy.probs))
+        occ_grid_to_dilate = np.reshape(np.where(occupancy < 50,0,1),(self.astar_occupancy.height,self.astar_occupancy.width))
+        dilated_grid_raw = skimage.morphology.dilation(occ_grid_to_dilate, square(WALL_DILATION_SIZE))
+        dilated_grid_final = np.ndarray.flatten(np.where(dilated_grid_raw == 1,70,0))
+        self.astar_occupancy.probs = dilated_grid_final
 
     def close_to_end_location(self):
         return (abs(self.x-self.x_g)<END_POS_THRESH and abs(self.y-self.y_g)<END_POS_THRESH)
@@ -212,13 +223,13 @@ class Navigator:
             x_init = self.snap_to_grid((self.x, self.y))
             x_goal = self.snap_to_grid((self.x_g, self.y_g))
 
+            
+            self.astar_occupancy = copy.copy(self.occupancy)
+            self.conflate_obstacles()
             #--- Add known puddles to occupancy grid ---
             if self.puddle_list:
                 self.puddle_to_occupancy()
-                problem = AStar(state_min,state_max,x_init,x_goal,self.astar_occupancy,self.plan_resolution)
-            #-------------------------------------------
-            else:
-                problem = AStar(state_min,state_max,x_init,x_goal,self.occupancy,self.plan_resolution)
+            problem = AStar(state_min,state_max,x_init,x_goal,self.astar_occupancy,self.plan_resolution)
 
             rospy.loginfo("Navigator: Computing navigation plan")
             if problem.solve():
