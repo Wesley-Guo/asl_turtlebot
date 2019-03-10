@@ -77,6 +77,7 @@ class Supervisor:
         self.delivery_requests = []
         self.home_base = "elephant"
         self.home_base_dict = {}
+        self.goal_list = []
 
         # subscribers
         # stop sign detector
@@ -166,32 +167,41 @@ class Supervisor:
         else:
             theta_mid = (theta_left + (theta_right - 2*np.pi))/2
 
-        pt = PointStamped()
+        pt = PoseStamped()
         pt.header.frame_id = '/camera'
         pt.header.stamp = rospy.get_rostime()
-        pt.point.x = dist*np.sin(theta_mid)
-        pt.point.y = 0
-        pt.point.z = dist*np.cos(theta_mid)
+        pt.pose.position.x = dist*np.sin(theta_mid)
+        pt.pose.position.y = 0
+        pt.pose.position.z = dist*np.cos(theta_mid)
+        quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
+        pt.pose.orientation.x = quat[0]
+        pt.pose.orientation.y = quat[1]
+        pt.pose.orientation.z = quat[2]
+        pt.pose.orientation.w = quat[3]
 
-        object_map_pt = self.tf_listener.transformPoint("/map", pt)
+        object_map_pt = self.tf_listener.transformPose("/map", pt)
+
+        euler_angles = tf.transformations.euler_from_quaternion(object_map_pt.pose.orientation)
+
+        object_map_pose = Pose2D()
+        object_map_pose.x = object_map_pt.pose.position.x
+        object_map_pose.y = object_map_pose.pose.position.y
+        object_map_pose.theta = euler_angles[2]
 
         if object_name in self.objects_dict:
             prevCount = self.objects_dict[object_name][1]
             prevPoint = self.objects_dict[object_name][0]
-            newPointVec = [((object_map_pt.point.x+(prevPoint.point.x*prevCount))/(prevCount+1)), 
-                            ((object_map_pt.point.y+(prevPoint.point.y*prevCount))/(prevCount+1)), 
-                                ((object_map_pt.point.z+(prevPoint.point.z*prevCount))/(prevCount+1))]
-            newPoint = PointStamped()
-            newPoint.header.frame_id = '/camera'
-            newPoint.header.stamp = rospy.get_rostime()
-            newPoint.point.x = newPointVec[0]
-            newPoint.point.y = newPointVec[1]
-            newPoint.point.z = newPointVec[2]
+            newPointVec = [((object_map_pose.x+(prevPoint.x*prevCount))/(prevCount+1)), 
+                            ((object_map_pose.y+(prevPoint.y*prevCount))/(prevCount+1)), 
+                                ((object_map_pose.theta+(prevPoint.theta*prevCount))/(prevCount+1))]
+            newPoint = Pose2D()
+            newPoint.x = newPointVec[0]
+            newPoint.y = newPointVec[1]
+            newPoint.theta = newPointVec[2]
             self.objects_dict[object_name] = (newPoint, prevCount+ 1)
         else:
-            self.objects_dict[object_name] = (object_map_pt, 0)
-        if self.home_base in self.objects_dict:
-            self.home_base_dict[self.home_base] = self.objects_dict[self.home_base]
+            self.objects_dict[object_name] = (object_map_pose, 1)
+        
 
 
     #Adam edit - detector for food 1 - TODO: change to actual 
@@ -348,11 +358,12 @@ class Supervisor:
 
 
     def delivery_request_callback(self,msg):
-    	self.cmd_list = msg.split(',')
-    	
-
-    def delivery_request_callback(self, msg):
-        self.delivery_requests = msg.split(',')
+        label_list = msg.split(',')
+        for label in label_list:
+            self.goal_list.append(self.objects_dict[label])
+        #reorder list to make optimal?
+        self.goal_list.append(self.objects_dict[self.home_base])
+        self.Mode = Mode.NAV
 
     def go_to_pose(self):
         """ sends the current desired pose to the pose controller """
@@ -393,11 +404,9 @@ class Supervisor:
 
     def init_explore_start(self):
     	self.explore_start = rospy.get_rostime()
-        self.x_g = float('inf')
-        self.y_g = float('inf')
-        self.theta = float('inf')
     	self.mode = Mode.EXPLORE
-        self.nav_to_pose
+        #implement autonomous exploration
+        #self.nav_to_pose()
 
     def has_explored(self):
         """ checks if exploration is over """
@@ -467,11 +476,15 @@ class Supervisor:
                 self.nav_to_pose()
 
         elif self.mode == Mode.NAV:
-            # 
-            if self.close_to(self.x_g,self.y_g,self.theta_g):
-                self.mode = Mode.IDLE
-            else:
+            while self.goal_list:
+                goal = goal_list[0]
+                self.x_g = goal.x
+                self.y_g = goal.y
+                self.theta_g = goal.theta
                 self.nav_to_pose()
+                if self.close_to(self.x_g,self.y_g,self.theta_g):
+                    del self.goal_list[0]
+            self.Mode = Mode.IDLE 
 
         elif self.mode == Mode.EXPLORE:
             self.init_explore_start()
