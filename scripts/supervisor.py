@@ -4,7 +4,7 @@ import rospy
 from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
-from asl_turtlebot.msg import DetectedObject
+from asl_turtlebot.msg import DetectedObject, DetectedObjectList
 import tf
 import tf.msg
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
@@ -46,11 +46,6 @@ class Mode(Enum):
     MANUAL = 6
     EXPLORE = 7
 
-class Phase(Enum):
-    EXPLORE = 1
-    DELIVER = 2
-
-
 print "supervisor settings:\n"
 print "use_gazebo = %s\n" % use_gazebo
 print "mapping = %s\n" % mapping
@@ -64,7 +59,7 @@ class Supervisor:
         self.y = 0
         self.theta = 0
         self.mode = Mode.IDLE
-        self.phase = Phase.EXPLORE
+        self.modeBeforeStop = None
         self.last_mode_printed = None
         self.trans_listener = tf.TransformListener()
         # command pose for controller
@@ -89,7 +84,6 @@ class Supervisor:
         # rospy.Subscriber('/detector/giraffe', DetectedObject, self.giraffe_detected_callback)
         # rospy.Subscriber('/delivery/getFood', Delivery, self.delivery_callback)
         rospy.Subscriber('/detector/objects', DetectedObjectList, self.object_list_callback)
-        rospy.Subscriber('/delivery_request', String, self.delivery_request_callback)
         # high-level navigation pose
         rospy.Subscriber('/nav_pose', Pose2D, self.nav_pose_callback)
         # if using gazebo, we have access to perfect state
@@ -148,7 +142,7 @@ class Supervisor:
         print("stop sign distance")
 		print(dist)
         # if close enough and in nav mode, stop
-        if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV:
+        if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV or self.mode == Mode.EXPLORE:
             self.init_stop_sign()
 
     def object_list_callback(self, msg):
@@ -400,6 +394,7 @@ class Supervisor:
         """ initiates a stop sign maneuver """
 
         self.stop_sign_start = rospy.get_rostime()
+        self.modeBeforeStop = self.mode
         self.mode = Mode.STOP
 
     def init_explore_start(self):
@@ -471,7 +466,7 @@ class Supervisor:
         elif self.mode == Mode.CROSS:
             # crossing an intersection
             if self.has_crossed():
-                self.mode = Mode.NAV
+                self.mode = self.
             else:
                 self.nav_to_pose()
 
