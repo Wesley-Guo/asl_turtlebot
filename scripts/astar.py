@@ -77,8 +77,8 @@ class AStar(object):
         # print(self.resolution)
         # print("x")
         # print(x)
-        for i in range(int(x[0])-self.resolution, int(x[0])+2*self.resolution, self.resolution):
-            for j in range(int(x[1])-self.resolution, int(x[1])+2*self.resolution, self.resolution):
+        for i in range(int(x[0]-self.resolution), int(x[0]+2*self.resolution), int(self.resolution)):
+            for j in range(int(x[1]-self.resolution), int(x[1]+2*self.resolution), int(self.resolution)):
                 if i != int(x[0]) or j != int(x[1]):
                     # print("i,j")
                     # print(i,j)
