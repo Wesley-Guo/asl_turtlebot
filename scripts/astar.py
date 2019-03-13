@@ -74,20 +74,21 @@ class AStar(object):
     def get_neighbors(self, x):
         # TODO: fill me in!
         neighbors = []
-        # print(self.resolution)
-        # print("x")
-        # print(x)
-        for i in range(int(x[0]-self.resolution), int(x[0]+2*self.resolution), int(self.resolution)):
-            for j in range(int(x[1]-self.resolution), int(x[1]+2*self.resolution), int(self.resolution)):
-                if i != int(x[0]) or j != int(x[1]):
-                    # print("i,j")
-                    # print(i,j)
-                    if self.is_free((i,j)):
-                        neighbors.append(self.snap_to_grid((i,j)))
-        # print("neighbors from fun")
-        # print(neighbors)
+        neighbors.append(self.snap_to_grid((x[0]+self.resolution,x[1])))
+        neighbors.append(self.snap_to_grid((x[0]-self.resolution,x[1])))
+        neighbors.append(self.snap_to_grid((x[0],x[1]+self.resolution)))
+        neighbors.append(self.snap_to_grid((x[0],x[1]-self.resolution)))
+        neighbors.append(self.snap_to_grid((x[0]+self.resolution,x[1]+self.resolution)))
+        neighbors.append(self.snap_to_grid((x[0]-self.resolution,x[1]+self.resolution)))
+        neighbors.append(self.snap_to_grid((x[0]+self.resolution,x[1]-self.resolution)))
+        neighbors.append(self.snap_to_grid((x[0]-self.resolution,x[1]-self.resolution)))
+        i = 0
+        while i < len(neighbors):
+            if not self.is_free(neighbors[i]):
+                neighbors.pop(i)
+            else:
+                i = i+1
         return neighbors
-
 
 
     # Gets the state in open_set that has the lowest f_score
