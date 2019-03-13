@@ -99,7 +99,8 @@ if __name__=="__main__":
                 request_pub.publish(delivery_list)
             elif key == 'f':
                 obj_count+=1
-                apple_name = 'apple'+str(obj_count)
+                # apple_name = 'apple'+str(obj_count)
+                apple_name = 'apple'                
                 fake_apple = makeFakeDetected(id_num=obj_count, name=apple_name)
                 fake_list = DetectedObjectList()
                 fake_list.objects.append(apple_name)
