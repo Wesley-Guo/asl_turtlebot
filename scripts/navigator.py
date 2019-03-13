@@ -3,7 +3,7 @@
 import rospy
 from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
 from gazebo_msgs.msg import ModelStates
-from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
+from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped, PointStamped
 from std_msgs.msg import Float32MultiArray, String
 import tf
 import numpy as np
@@ -13,6 +13,9 @@ from astar import AStar
 from grids import StochOccupancyGrid2D
 import scipy.interpolate
 import matplotlib.pyplot as plt
+import copy
+import skimage
+from skimage.morphology import square
 
 
 # threshold at which navigator switches
@@ -46,6 +49,10 @@ KDY = 1.5
 # smoothing condition (see splrep documentation)
 SMOOTH = .01
 
+PUDDLE_TOLERANCE = 0.1
+PUDDLE_SIZE = 5 #MUST BE ODD NUMBER
+WALL_DILATION_SIZE = 2
+
 class Navigator:
 
     def __init__(self):
@@ -70,6 +77,7 @@ class Navigator:
         self.map_origin = [0,0]
         self.map_probs = []
         self.occupancy = None
+        self.astar_occupancy = None  #This is the occupancy grid that actually gets passed to astar
         self.occupancy_updated = False
 
         # plan parameters
@@ -79,17 +87,27 @@ class Navigator:
         # variables for the controller
         self.V_prev = 0
         self.V_prev_t = rospy.get_rostime()
+        
+        self.sequence = 0
+        
+        self.orientation = 1
+        
+        #dictionary for list of puddles
+        self.puddle_list = []
 
         self.nav_path_pub = rospy.Publisher('/cmd_path', Path, queue_size=10)
         self.nav_pose_pub = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
         self.nav_pathsp_pub = rospy.Publisher('/cmd_path_sp', PoseStamped, queue_size=10)
         self.nav_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.map_mod = rospy.Publisher('/map_mod', OccupancyGrid, queue_size=10)
 
         self.trans_listener = tf.TransformListener()
 
         rospy.Subscriber('/map', OccupancyGrid, self.map_callback)
         rospy.Subscriber('/map_metadata', MapMetaData, self.map_md_callback)
         rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_nav_callback)
+        rospy.Subscriber('puddle_world', PointStamped, self.puddle_callback)
+        rospy.Subscriber('/clicked_point', PointStamped, self.manual_puddle_callback)
 
     def cmd_nav_callback(self, data):
         self.x_g = data.x
@@ -105,6 +123,7 @@ class Navigator:
 
     def map_callback(self,msg):
         self.map_probs = msg.data
+        self.orientation = msg.info.origin.orientation.w
         if self.map_width>0 and self.map_height>0 and len(self.map_probs)>0:
             self.occupancy = StochOccupancyGrid2D(self.map_resolution,
                                                   self.map_width,
@@ -114,6 +133,81 @@ class Navigator:
                                                   8,
                                                   self.map_probs)
             self.occupancy_updated = True
+            
+        self.publish_map_mod()
+    
+    def puddle_callback(self,msg):
+        puddle_repeated = False
+        if self.puddle_list:
+            for puddle in self.puddle_list:
+                puddle_x_difference = puddle[0] - msg.point.x
+                puddle_y_difference = puddle[1] - msg.point.y
+                if puddle_x_difference < 0:
+                    puddle_x_difference *= -1
+                if puddle_y_difference < 0:
+                    puddle_y_difference *= -1
+                if (puddle_x_difference < PUDDLE_TOLERANCE) and (puddle_y_difference < PUDDLE_TOLERANCE):
+                    puddle_repeated = True
+                    break
+        if not puddle_repeated:
+            self.puddle_list.append([msg.point.x,msg.point.y])
+            self.publish_map_mod()
+    
+    def manual_puddle_callback(self,msg):
+        self.puddle_callback(msg)
+            
+    def publish_map_mod(self):
+        self.astar_occupancy = copy.copy(self.occupancy)
+        self.conflate_obstacles()
+        if self.puddle_list:
+            self.puddle_to_occupancy()
+        msg2send = OccupancyGrid()
+        msg2send.header.seq = self.sequence
+        msg2send.header.stamp = rospy.Time.now()
+        msg2send.header.frame_id = "/map"
+        msg2send.info.resolution = self.astar_occupancy.resolution
+        msg2send.info.width = self.astar_occupancy.width
+        msg2send.info.height = self.astar_occupancy.height
+        msg2send.info.origin.position.x = self.astar_occupancy.origin_x
+        msg2send.info.origin.position.y = self.astar_occupancy.origin_y
+        msg2send.info.origin.orientation.w = self.orientation
+        msg2send.data = self.astar_occupancy.probs
+        self.map_mod.publish(msg2send)
+        self.sequence += 1
+    
+    def puddle_to_occupancy(self):
+        for puddle in self.puddle_list:
+            raw_x_occ = (puddle[0]-self.astar_occupancy.origin_x)
+            raw_y_occ = (puddle[1]-self.astar_occupancy.origin_y)
+            (puddle_row,puddle_col) = self.astar_occupancy.snap_to_grid([raw_x_occ,raw_y_occ])
+            puddle_rowid = puddle_row/self.astar_occupancy.resolution
+            puddle_colid = puddle_col/self.astar_occupancy.resolution
+            index = self.astar_occupancy.width*puddle_rowid+puddle_colid
+            #self.astar_occupancy.probs[index] = 93
+            self.fill_in_puddle(puddle_rowid,puddle_colid)
+
+
+    def fill_in_puddle(self,puddle_rowid, puddle_colid):
+        #Use either manual dilation or SKImage
+        #Possibly use DBScan for clustering
+        occupancy = list(copy.copy(self.astar_occupancy.probs))
+        for i in range(PUDDLE_SIZE):
+            for j in range(PUDDLE_SIZE):
+                #TODO edge case if center of puddle is at edge of map
+                index = self.astar_occupancy.width*(puddle_colid-(PUDDLE_SIZE/2)+i)+(puddle_rowid-(PUDDLE_SIZE/2)+j)
+                if (not index < 0) and (not index >= len(self.astar_occupancy.probs)):
+                    occupancy[int(index)] = 100
+                    self.astar_occupancy.probs = occupancy
+
+    def conflate_obstacles(self):
+        #TODO
+        #Conflate obstacles in occupancy grid
+        occupancy = np.array(copy.copy(self.astar_occupancy.probs))
+        unknown_idx = np.where(occupancy==-1,-1,0)
+        occ_grid_to_dilate = np.reshape(np.where(occupancy < 50,0,1),(self.astar_occupancy.height,self.astar_occupancy.width))
+        dilated_grid_raw = skimage.morphology.dilation(occ_grid_to_dilate, square(WALL_DILATION_SIZE))
+        dilated_grid_final = np.ndarray.flatten(np.where(dilated_grid_raw == 1,100,0))+unknown_idx
+        self.astar_occupancy.probs = dilated_grid_final
 
     def close_to_end_location(self):
         return (abs(self.x-self.x_g)<END_POS_THRESH and abs(self.y-self.y_g)<END_POS_THRESH)
@@ -168,7 +262,14 @@ class Navigator:
             state_max = self.snap_to_grid((self.plan_horizon, self.plan_horizon))
             x_init = self.snap_to_grid((self.x, self.y))
             x_goal = self.snap_to_grid((self.x_g, self.y_g))
-            problem = AStar(state_min,state_max,x_init,x_goal,self.occupancy,self.plan_resolution)
+
+            
+            #self.astar_occupancy = copy.copy(self.occupancy)
+            #self.conflate_obstacles()
+            #--- Add known puddles to occupancy grid ---
+            #if self.puddle_list:
+            #    self.puddle_to_occupancy()
+            problem = AStar(state_min,state_max,x_init,x_goal,self.astar_occupancy,self.plan_resolution)
 
             rospy.loginfo("Navigator: Computing navigation plan")
             if problem.solve():
