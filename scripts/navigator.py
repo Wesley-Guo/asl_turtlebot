@@ -4,6 +4,7 @@ import rospy
 from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
 from gazebo_msgs.msg import ModelStates
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped, PointStamped
+from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg import Float32MultiArray, String
 import tf
 import numpy as np
@@ -50,7 +51,7 @@ KDY = 1.5
 SMOOTH = .01
 
 PUDDLE_TOLERANCE = 0.1
-PUDDLE_SIZE = 5 #MUST BE ODD NUMBER
+PUDDLE_SIZE = 3 #MUST BE ODD NUMBER
 WALL_DILATION_SIZE = 2
 
 class Navigator:
@@ -100,6 +101,7 @@ class Navigator:
         self.nav_pathsp_pub = rospy.Publisher('/cmd_path_sp', PoseStamped, queue_size=10)
         self.nav_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         self.map_mod = rospy.Publisher('/map_mod', OccupancyGrid, queue_size=10)
+        self.puddle_list_pub = rospy.Publisher('/detected_puddle_list', MarkerArray, queue_size=10)
 
         self.trans_listener = tf.TransformListener()
 
@@ -152,6 +154,32 @@ class Navigator:
         if not puddle_repeated:
             self.puddle_list.append([msg.point.x,msg.point.y])
             self.publish_map_mod()
+            self.occupancy_updated = True
+            msg2send = PuddleArray()
+            for i in range(len(self.puddle_list)):
+                marker = Marker()
+                marker.header.frame_id = "/map"
+                marker.header.stamp = rospy.Time.now()
+                marker.ns = 'puddle_marker'
+                marker.id = i
+                marker.type = Marker.CYLINDER #cylinder
+                marker.action = Marker.ADD #add/modify
+                marker.pose.position.x = self.puddle_list[i][0]
+                marker.pose.position.y = self.puddle_list[i][1]
+                marker.pose.position.z = 0.0
+                marker.pose.orientation.x = 0.0
+                marker.pose.orientation.y = 0.0
+                marker.pose.orientation.z = 0.0
+                marker.pose.orientation.w = 0.0
+                marker.scale.x = 0.15
+                marker.scale.y = 0.15
+                marker.scale.z = 0.5
+                marker.color.a = 1.0
+                marker.color.r = 30
+                marker.color.g = 144
+                marker.color.b = 255
+                    
+                robot_pose.publish(marker)
     
     def manual_puddle_callback(self,msg):
         self.puddle_callback(msg)
