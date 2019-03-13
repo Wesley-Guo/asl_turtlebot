@@ -68,7 +68,7 @@ class Supervisor:
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         # command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
-        self.marker_publisher = rospy.Publisher('/marker_array', MarkerArray)
+        self.marker_publisher = rospy.Publisher('/marker_array', MarkerArray, queue_size=10)
         self.objects_dict = {}
         self.delivery_requests = []
         self.home_base = "elephant"
