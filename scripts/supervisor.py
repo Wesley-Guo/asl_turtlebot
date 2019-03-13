@@ -74,6 +74,11 @@ class Supervisor:
         self.home_base_dict = {}
         self.goal_list = []
 
+        if use_gazebo:
+            self.camera_frame_id = '/base_camera'
+        else:
+            self.camera_frame_id = '/camera'
+
         # subscribers
         # stop sign detector
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
@@ -93,6 +98,8 @@ class Supervisor:
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
         # deliveries subscriber
         rospy.Subscriber('/delivery_request', String, self.delivery_request_callback)
+        # stat exploration from keyboard command subscriber
+        # rospy.Subscriber('/keyboard_commands', String, self.keyboard_callback)
         
     def gazebo_callback(self, msg):
         pose = msg.pose[msg.name.index("turtlebot3_burger")]
@@ -112,20 +119,25 @@ class Supervisor:
         origin_frame = "/map" if mapping else "/odom"
         print("rviz command received!")
         try:
-            
-            nav_pose_origin = self.trans_listener.transformPose(origin_frame, msg)
-            self.x_g = nav_pose_origin.pose.position.x
-            self.y_g = nav_pose_origin.pose.position.y
-            quaternion = (
-                    nav_pose_origin.pose.orientation.x,
-                    nav_pose_origin.pose.orientation.y,
-                    nav_pose_origin.pose.orientation.z,
-                    nav_pose_origin.pose.orientation.w)
-            euler = tf.transformations.euler_from_quaternion(quaternion)
-            self.theta_g = euler[2]
+            # Only respond to RVIZ clicks if we are in explore mode
+            if self.mode == Mode.IDLE: 
+                nav_pose_origin = self.trans_listener.transformPose(origin_frame, msg)
+                self.x_g = nav_pose_origin.pose.position.x
+                self.y_g = nav_pose_origin.pose.position.y
+                quaternion = (
+                        nav_pose_origin.pose.orientation.x,
+                        nav_pose_origin.pose.orientation.y,
+                        nav_pose_origin.pose.orientation.z,
+                        nav_pose_origin.pose.orientation.w)
+                euler = tf.transformations.euler_from_quaternion(quaternion)
+                self.theta_g = euler[2]
+
+                # send goal to navigator node.
+                self.nav_to_pose()
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            print('tf error in rviz_goal_callback')
             pass
-        self.mode = Mode.NAV
+
 
     def nav_pose_callback(self, msg):
         self.x_g = msg.x
@@ -155,53 +167,55 @@ class Supervisor:
         self.init_explore_start()
 
     def add_to_dict(self, object_name, object_msg):
-        dist = object_msg.distance
-        print( object_name + " distance")
-        print(dist)
-        theta_left = object_msg.thetaleft
-        theta_right = object_msg.thetaright
-        theta_mid = 0
-        if theta_left >= theta_right:
-            theta_mid = (theta_left+theta_right)/2
-        else:
-            theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+        pass
+        # dist = object_msg.distance
+        # print( object_name + " distance")
+        # print(dist)
+        # theta_left = object_msg.thetaleft
+        # theta_right = object_msg.thetaright
+        # theta_mid = 0
+        # if theta_left >= theta_right:
+        #     theta_mid = (theta_left+theta_right)/2
+        # else:
+        #     theta_mid = (theta_left + (theta_right - 2*np.pi))/2
 
-        pt = PoseStamped()
-        pt.header.frame_id = '/base_camera'
-        pt.header.stamp = rospy.get_rostime()
-        pt.pose.position.x = dist*np.sin(theta_mid)
-        pt.pose.position.y = 0
-        pt.pose.position.z = dist*np.cos(theta_mid)
-        quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
-        pt.pose.orientation.x = quat[0]
-        pt.pose.orientation.y = quat[1]
-        pt.pose.orientation.z = quat[2]
-        pt.pose.orientation.w = quat[3]
+        # pt = PoseStamped()
 
-        self.trans_listener.waitForTransform(pt.header.frame_id, "/map", rospy.Time.now(), rospy.Duration(1.0))
-        object_map_pt = self.trans_listener.transformPose("/map", pt)
+        # pt.header.frame_id = self.camera_frame_id
+        # pt.header.stamp = rospy.get_rostime()
+        # pt.pose.position.x = dist*np.sin(theta_mid)
+        # pt.pose.position.y = 0
+        # pt.pose.position.z = dist*np.cos(theta_mid)
+        # quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
+        # pt.pose.orientation.x = quat[0]
+        # pt.pose.orientation.y = quat[1]
+        # pt.pose.orientation.z = quat[2]
+        # pt.pose.orientation.w = quat[3]
 
-        euler_angles = tf.transformations.euler_from_quaternion([object_map_pt.pose.orientation.x,object_map_pt.pose.orientation.y,
-                                                                    object_map_pt.pose.orientation.z, object_map_pt.pose.orientation.w])
+        # self.trans_listener.waitForTransform(pt.header.frame_id, "/map", rospy.Time.now(), rospy.Duration(1.0))
+        # object_map_pt = self.trans_listener.transformPose("/map", pt)
 
-        object_map_pose = Pose2D()
-        object_map_pose.x = object_map_pt.pose.position.x
-        object_map_pose.y = object_map_pt.pose.position.y
-        object_map_pose.theta = euler_angles[2]
+        # euler_angles = tf.transformations.euler_from_quaternion([object_map_pt.pose.orientation.x,object_map_pt.pose.orientation.y,
+        #                                                             object_map_pt.pose.orientation.z, object_map_pt.pose.orientation.w])
 
-        if object_name in self.objects_dict:
-            prevCount = self.objects_dict[object_name][1]
-            prevPoint = self.objects_dict[object_name][0]
-            newPointVec = [((object_map_pose.x+(prevPoint.x*prevCount))/(prevCount+1)), 
-                            ((object_map_pose.y+(prevPoint.y*prevCount))/(prevCount+1)), 
-                                ((object_map_pose.theta+(prevPoint.theta*prevCount))/(prevCount+1))]
-            newPoint = Pose2D()
-            newPoint.x = newPointVec[0]
-            newPoint.y = newPointVec[1]
-            newPoint.theta = newPointVec[2]
-            self.objects_dict[object_name] = (newPoint, prevCount+ 1)
-        else:
-            self.objects_dict[object_name] = (object_map_pose, 1)
+        # object_map_pose = Pose2D()
+        # object_map_pose.x = object_map_pt.pose.position.x
+        # object_map_pose.y = object_map_pt.pose.position.y
+        # object_map_pose.theta = euler_angles[2]
+
+        # if object_name in self.objects_dict:
+        #     prevCount = self.objects_dict[object_name][1]
+        #     prevPoint = self.objects_dict[object_name][0]
+        #     newPointVec = [((object_map_pose.x+(prevPoint.x*prevCount))/(prevCount+1)), 
+        #                     ((object_map_pose.y+(prevPoint.y*prevCount))/(prevCount+1)), 
+        #                         ((object_map_pose.theta+(prevPoint.theta*prevCount))/(prevCount+1))]
+        #     newPoint = Pose2D()
+        #     newPoint.x = newPointVec[0]
+        #     newPoint.y = newPointVec[1]
+        #     newPoint.theta = newPointVec[2]
+        #     self.objects_dict[object_name] = (newPoint, prevCount+ 1)
+        # else:
+        #     self.objects_dict[object_name] = (object_map_pose, 1)
         
 
 
@@ -292,6 +306,7 @@ class Supervisor:
                 euler = tf.transformations.euler_from_quaternion(rotation)
                 self.theta = euler[2]
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                print('tf error occured when looking up transform from /map to /base_footprint')
                 pass
 
         # logs the current mode
