@@ -135,7 +135,7 @@ class PuddleViz:
                 for i in range(ellipse_points.shape[-1]):
                     # print("drawing ellipse")
                     self.puddle_marker.points.append(Point(ellipse_points[0,i], ellipse_points[1,i], 0)) 
-                self.puddle_world.publish(puddle_map_pt)
+                self.puddle_world_pub.publish(puddle_map_pt)
                 self.puddle_viz_pub.publish(self.puddle_marker)
 
             except:
