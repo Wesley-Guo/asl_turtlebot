@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package>
-  <name>asl_turtlebot_project_team13</name>
+  <name>asl_turtlebot</name>
   <version>0.0.0</version>
   <description>The asl_turtlebot package</description>
 
