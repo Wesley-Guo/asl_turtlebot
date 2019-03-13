@@ -8,6 +8,7 @@ from asl_turtlebot.msg import DetectedObject, DetectedObjectList
 import tf
 import tf.msg
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
+from visualization_msgs.msg import Marker, MarkerArray
 import math
 from enum import Enum
 import numpy as np
@@ -77,7 +78,8 @@ class Supervisor:
         self.rviz_goal = False
         self.explore_start = rospy.get_rostime()
         self.marker_array = MarkerArray()
-        self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli','chair']
+        self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli','chair',
+                                    'cake','apple','hot dog','banana','donut','pizza','carrot']
 
         if use_gazebo:
             self.camera_frame_id = '/base_camera'
@@ -164,7 +166,7 @@ class Supervisor:
             self.init_stop_sign()
 
     def object_list_callback(self, msg):
-        if self.mode = Mode.EXPLORE:
+        if self.mode == Mode.EXPLORE:
             for i in range(len(msg.objects)):
                 if msg.objects[i] in  self.acceptable_objects and msg.object_msgs[i].confidence > 0.6:
                     self.add_to_dict(msg.objects[i], msg.ob_msgs[i])
