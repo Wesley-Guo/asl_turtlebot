@@ -68,6 +68,7 @@ class Supervisor:
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         # command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+        self.marker_publisher = rospy.Publisher('/marker_array', MarkerArray)
         self.objects_dict = {}
         self.delivery_requests = []
         self.home_base = "elephant"
@@ -75,6 +76,8 @@ class Supervisor:
         self.goal_list = []
         self.rviz_goal = False
         self.explore_start = rospy.get_rostime()
+        self.marker_array = MarkerArray()
+        self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli','chair']
 
         if use_gazebo:
             self.camera_frame_id = '/base_camera'
@@ -102,6 +105,7 @@ class Supervisor:
         rospy.Subscriber('/delivery_request', String, self.delivery_request_callback)
         # stat exploration from keyboard command subscriber
         # rospy.Subscriber('/keyboard_commands', String, self.keyboard_callback)
+
         
     def gazebo_callback(self, msg):
         pose = msg.pose[msg.name.index("turtlebot3_burger")]
@@ -160,8 +164,10 @@ class Supervisor:
             self.init_stop_sign()
 
     def object_list_callback(self, msg):
-        for i in range(len(msg.objects)):
-            self.add_to_dict(msg.objects[i], msg.ob_msgs[i])
+        if self.mode = Mode.EXPLORE:
+            for i in range(len(msg.objects)):
+                if msg.objects[i] in  self.acceptable_objects and msg.object_msgs[i].confidence > 0.6:
+                    self.add_to_dict(msg.objects[i], msg.ob_msgs[i])
         # print("added all to dict")
         # print(self.objects_dict)
 
@@ -221,6 +227,22 @@ class Supervisor:
             self.objects_dict[object_name] = (newPoint, prevCount+ 1)
         else:
             self.objects_dict[object_name] = (object_map_pose, 1)
+
+        marker = Marker()
+        marker.header.frame_id = "/map"
+        marker.type = marker.CYLINDER
+        marker.action = marker.ADD
+        marker.scale.x = 0.2
+        marker.scale.y = 0.2
+        marker.scale.z = 0.2
+        marker.color.a = 1.0
+        marker.pose.orientation.w = 1.0
+        marker.pose.position.x = self.objects_dict[object_name][0].x
+        marker.pose.position.y = self.objects_dict[object_name][0].y
+        marker.pose.position.z = 0
+        self.marker_array.markers.append(marker)
+
+        self.marker_publisher.publish(self.marker_array)
         
 
 
