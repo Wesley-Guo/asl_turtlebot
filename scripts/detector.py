@@ -168,6 +168,8 @@ class Detector:
         if num_m>0:
             dist /= num_m
 
+        print(dist)
+
         return dist
 
     def camera_callback(self, msg):

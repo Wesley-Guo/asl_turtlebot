@@ -42,21 +42,21 @@ RHO = 1.5
 #     x = a * np.cos(th)
 #     y = b * np.sin(th)
 #     return np.stack([x,y])
-def compute_convex_hull(xy_filtered):
-    hull = ConvexHull(xy_filtered)
-    return hull
+# def compute_convex_hull(xy_filtered):
+#     hull = ConvexHull(xy_filtered)
+#     return hull
 
 
-def initialize_puddle_marker():
-    puddle_marker = Marker()
-    puddle_marker.header.frame_id = "/puddle"
-    puddle_marker.ns = "chull"
-    puddle_marker.type = Marker.LINE_STRIP
-    puddle_marker.scale.x = 0.01
-    puddle_marker.frame_locked = True
-    puddle_marker.color.g = 1
-    puddle_marker.color.a = 1
-    return puddle_marker
+# def initialize_puddle_marker():
+#     puddle_marker = Marker()
+#     puddle_marker.header.frame_id = "/puddle"
+#     puddle_marker.ns = "chull"
+#     puddle_marker.type = Marker.LINE_STRIP
+#     puddle_marker.scale.x = 0.01
+#     puddle_marker.frame_locked = True
+#     puddle_marker.color.g = 1
+#     puddle_marker.color.a = 1
+#     return puddle_marker
 
 class PuddleViz:
     def __init__(self):
@@ -116,52 +116,3 @@ class PuddleViz:
             # self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), np.mean(z_filtered))
             # self.puddle_var = (np.var(x_filtered), np.var(y_filtered), np.var(z_filtered))
             self.convex_hull = compute_convex_hull(self.xy_filtered)
-
-
-
-    def loop(self):
-
-        if self.convex_hull is not None:
-            pt = PolygonStamped()
-            pt.header.frame_id = '/velodyne'
-            pt.header.stamp = self.puddle_time
-            # pt.point.x = self.puddle_mean[0]
-            # pt.point.y = self.puddle_mean[1]
-            # pt.point.z = self.puddle_mean[2]
-
-            try:
-                # send a tf transform of the puddle location in the map frame
-                self.tf_listener.waitForTransform("/map", '/velodyne', self.puddle_time, rospy.Duration(.05))
-                puddle_map_pt = self.tf_listener.transformPoint("/map", pt)
-                self.puddle_broadcaster.sendTransform((puddle_map_pt.point.x, puddle_map_pt.point.y, puddle_map_pt.point.z), 
-                                                       [0, 0, 0, 1],
-                                                       self.puddle_time,
-                                                       "/puddle",
-                                                       "/map")
-                
-                # make puddle marker
-                # ellipse_points = compute_ellipse_points(0.2, 0.2)
-                zeros = np.zeros((self.xy_filtered[self.convex_hull.vertices].shape[0],))
-                pointlist = np.column_stack((self.xy_filtered[self.convex_hull.vertices],zeros))
-                pointlist = np.vstack((pointlist, pointlist[0,:]))
-                self.puddle_marker.polygon.points = pointlist
-                # self.puddle_marker
-                # for i in range(self.xy_filtered[hull.vertices,0].shape[0]):
-                #     print("drawing puddle (convex hull)")
-                #     self.puddle_marker.points.append(Point(ellipse_points[0,i], ellipse_points[1,i], 0)) 
-                self.puddle_viz_pub.publish(self.puddle_marker)
-
-            except:
-                pass
-
-
-    def run(self):
-        rate = rospy.Rate(50) # 50 Hz
-        while not rospy.is_shutdown():
-            self.loop()
-            rate.sleep()
-
-
-if __name__ == '__main__':
-    puddle_viz = PuddleViz()
-    puddle_viz.run()

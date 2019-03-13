@@ -4,7 +4,7 @@ import numpy as np
 import tf
 import tf.msg
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
-from geometry_msgs.msg import PointStamped, Point, Polygon, PolygonStamped, Point32
+from geometry_msgs.msg import PointStamped, Point, Polygon, PolygonStamped, Point32, Quaternion
 from visualization_msgs.msg import Marker
 
 # look up doc.
@@ -37,11 +37,6 @@ MIN_POINTS = 3
 # look ahead distance to search for puddles
 RHO = 1.5
 
-# def compute_ellipse_points(a, b):
-#     th = np.arange(0, 2*np.pi+1, 0.2)
-#     x = a * np.cos(th)
-#     y = b * np.sin(th)
-#     return np.stack([x,y])
 def compute_convex_hull(xy_filtered):
     hull = ConvexHull(xy_filtered)
     return hull
@@ -49,13 +44,15 @@ def compute_convex_hull(xy_filtered):
 
 def initialize_puddle_marker():
     puddle_marker = Marker()
-    puddle_marker.header.frame_id = "/puddle"
+    puddle_marker.header.frame_id = "/map"
     puddle_marker.ns = "chull"
     puddle_marker.type = Marker.LINE_STRIP
-    puddle_marker.scale.x = 0.01
+    puddle_marker.scale.x = .1
     puddle_marker.frame_locked = True
     puddle_marker.color.g = 1
     puddle_marker.color.a = 1
+    puddle_marker.pose.position = Point(0.0,0.0,0.0)
+    puddle_marker.pose.orientation = Quaternion(0.0,0.0,0.0,1.0)
     return puddle_marker
 
 class PuddleViz:
@@ -67,9 +64,9 @@ class PuddleViz:
         self.puddle_viz_pub = rospy.Publisher("/viz/puddle", Marker, queue_size=10)
         self.puddle_marker = initialize_puddle_marker()
         self.xy_filtered = np.zeros((0,2))
-        # self.y_filtered = np.zeros((0))
         self.convex_hull = None
-        rospy.Subscriber("/velodyne_puddle_filter", PointCloud2, self.velodyne_callback)
+        rospy.Subscriber("/sample_puddle", PointCloud2, self.velodyne_callback)
+        self.new_puddle = False
 
 
     def velodyne_callback(self, msg):
@@ -77,6 +74,7 @@ class PuddleViz:
         This is an example of how to process PointCloud2 data.
         pc2.read_points creates an _iterator_ object.
         '''
+        print('recieved point cloud data')
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
         num_points = len(list(lidar_info))
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
@@ -103,60 +101,50 @@ class PuddleViz:
 
         # filtered points
         filtered_points = pts_within_range & pts_within_angle
+        # filtered_points = pts_within_range
 
         x_filtered = x_coords[filtered_points]
         y_filtered = y_coords[filtered_points]
         #trying to use self.x and y filtered for convex hull
         self.xy_filtered = np.column_stack((x_filtered,y_filtered))
+        # print(self.xy_filtered)
         # self.y_filtered = y_filtered
         z_filtered = z_coords[filtered_points]
         self.puddle_time = msg.header.stamp
 
         if sum(filtered_points) > MIN_POINTS:
-            # self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), np.mean(z_filtered))
-            # self.puddle_var = (np.var(x_filtered), np.var(y_filtered), np.var(z_filtered))
+            self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), 0)
             self.convex_hull = compute_convex_hull(self.xy_filtered)
+            print('created puddle hull')
+            self.new_puddle = True
 
 
 
     def loop(self):
-
         if self.convex_hull is not None:
-            pt = PolygonStamped()
-            pt.header.frame_id = '/velodyne'
-            pt.header.stamp = self.puddle_time
-            # pt.point.x = self.puddle_mean[0]
-            # pt.point.y = self.puddle_mean[1]
-            # pt.point.z = self.puddle_mean[2]
-
-            try:
-                # send a tf transform of the puddle location in the map frame
-                self.tf_listener.waitForTransform("/map", '/velodyne', self.puddle_time, rospy.Duration(.05))
-                puddle_map_pt = self.tf_listener.transformPoint("/map", pt)
-                self.puddle_broadcaster.sendTransform((puddle_map_pt.point.x, puddle_map_pt.point.y, puddle_map_pt.point.z), 
-                                                       [0, 0, 0, 1],
+            if self.new_puddle:
+                # send fixed transform to puddle center for simulated data
+                self.puddle_broadcaster.sendTransform((self.puddle_mean[0], self.puddle_mean[1], 
+                                                       self.puddle_mean[2]), 
+                                                       [0,0,0,1],
                                                        self.puddle_time,
                                                        "/puddle",
                                                        "/map")
+                print('transform sent')
                 
                 # make puddle marker
-                # ellipse_points = compute_ellipse_points(0.2, 0.2)
                 zeros = np.zeros((self.xy_filtered[self.convex_hull.vertices].shape[0],))
-                pointlist = np.column_stack((self.xy_filtered[self.convex_hull.vertices],zeros))
+                pointlist = self.xy_filtered[self.convex_hull.vertices]
                 pointlist = np.vstack((pointlist, pointlist[0,:]))
-                self.puddle_marker.polygon.points = pointlist
-                # self.puddle_marker
-                # for i in range(self.xy_filtered[hull.vertices,0].shape[0]):
-                #     print("drawing puddle (convex hull)")
-                #     self.puddle_marker.points.append(Point(ellipse_points[0,i], ellipse_points[1,i], 0)) 
+                self.puddle_marker.points = []
+                for p in pointlist:
+                    self.puddle_marker.points.append(Point(p[0], p[1], 0))
+                self.puddle_marker.points
                 self.puddle_viz_pub.publish(self.puddle_marker)
-
-            except:
-                pass
-
+                self.new_puddle = False
 
     def run(self):
-        rate = rospy.Rate(50) # 50 Hz
+        rate = rospy.Rate(25) # 25 Hz
         while not rospy.is_shutdown():
             self.loop()
             rate.sleep()
@@ -164,4 +152,5 @@ class PuddleViz:
 
 if __name__ == '__main__':
     puddle_viz = PuddleViz()
+    rospy.sleep(1)
     puddle_viz.run()
