@@ -179,8 +179,8 @@ class Supervisor:
     def add_to_dict(self, object_name, object_msg):
         # pass
         dist = object_msg.distance
-        # print( object_name + " distance")
-        # print(dist)
+        print( object_name + " distance")
+        print(dist)
         theta_left = object_msg.thetaleft
         theta_right = object_msg.thetaright
         theta_mid = 0
