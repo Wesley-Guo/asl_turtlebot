@@ -4,6 +4,9 @@
   
   <node pkg="asl_turtlebot" type="navigator.py" name="turtlebot_navigator" />
   <node pkg="asl_turtlebot" type="pose_controller.py" name="turtlebot_pose_controller" />
+<!--  <node pkg="asl_turtlebot" type="supervisor.py" name="turtlebot_supervisor" /> -->
+
+ 
 
 
   <node name="rviz" pkg="rviz" type="rviz" args="-d $(find asl_turtlebot)/rviz/project_sim.rviz"/>
