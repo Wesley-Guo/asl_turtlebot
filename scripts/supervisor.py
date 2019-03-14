@@ -35,7 +35,7 @@ STOP_MIN_DIST = .5
 CROSSING_TIME = 3
 
 # time to autonomously explore
-EXPLORE_TIME = 10
+EXPLORE_TIME = 120
 
 # state machine modes, not all implemented
 class Mode(Enum):
@@ -136,6 +136,7 @@ class Supervisor:
         try:
             # Only respond to RVIZ clicks if we are in explore mode
             if self.mode == Mode.EXPLORE: 
+                print("sending new goal")
                 nav_pose_origin = self.trans_listener.transformPose(origin_frame, msg)
                 self.x_g = nav_pose_origin.pose.position.x
                 self.y_g = nav_pose_origin.pose.position.y
@@ -178,8 +179,8 @@ class Supervisor:
                 if msg.objects[i] in  self.acceptable_objects and msg.ob_msgs[i].confidence > 0.5:
                     self.add_to_dict(msg.objects[i], msg.ob_msgs[i])
                     rospy.loginfo(msg.objects[i])
-        print("added all to dict")
-        print(self.objects_dict)
+        # print("added all to dict")
+        # print(self.objects_dict)
 
     def idle_to_explore_callback(self, msg):
         self.init_explore_start()
@@ -226,20 +227,29 @@ class Supervisor:
         object_map_pose.theta = euler_angles[2]
 
         if object_name in self.objects_dict:
-            prevCount = self.objects_dict[object_name][1]
+            sumWeights = self.objects_dict[object_name][4]
+            sumCoords_theta = self.objects_dict[object_name][3]
+            sumCoords_y = self.objects_dict[objects_name][2]
+            sumCoords_x = self.objects_dict[object_name][1]
             prevPoint = self.objects_dict[object_name][0]
             # don't average if the distance is nota number. 
             if not(np.isnan(object_map_pose.x) and np.isnan(object_map_pose.y)):
-                newPointVec = [((object_map_pose.x+(prevPoint.x*prevCount))/(prevCount+1)), 
-                                ((object_map_pose.y+(prevPoint.y*prevCount))/(prevCount+1)), 
-                                    ((object_map_pose.theta+(prevPoint.theta*prevCount))/(prevCount+1))]
+                newPointVec = [(((object_map_pose.x*np.cos(theta_mid))+ sumCoords_x)/sumWeights), 
+                                (((object_map_pose.y*np.cos(theta_mid))+ sumCoords_y)/sumWeights), 
+                                    (((object_map_pose.theta*np.cos(theta_mid))+ sumCoords_theta)/sumWeights)]
                 newPoint = Pose2D()
                 newPoint.x = newPointVec[0]
                 newPoint.y = newPointVec[1]
                 newPoint.theta = newPointVec[2]
-                self.objects_dict[object_name] = (newPoint, prevCount+ 1)
+                self.objects_dict[object_name] = (newPoint, sumCoords_x + (object_map_pose.x*np.cos(theta_mid)),
+                                                    sumCoords_y + (object_map_pose.y*np.cos(theta_mid)),
+                                                    sumCoords_theta + (object_map_pose.theta*np.cos(theta_mid)),
+                                                     sumWeights + np.cos(theta_mid))
         else:
-            self.objects_dict[object_name] = (object_map_pose, 1)
+            self.objects_dict[object_name] = (object_map_pose, (object_map_pose.x*np.cos(theta_mid)),
+                                                (object_map_pose.y*np.cos(theta_mid)),
+                                                (object_map_pose.theta*np.cos(theta_mid)),
+                                                np.cos(theta_mid))
 
         marker = Marker()
         marker.header.frame_id = "/map"
@@ -317,8 +327,8 @@ class Supervisor:
 
     def has_explored(self):
         """ checks if exploration is over """
-        print "Check explore time:"
-        print(rospy.get_rostime()-self.explore_start)
+        # print "Check explore time:"
+        # print(rospy.get_rostime()-self.explore_start)
         # print(rospy.Duration.from_sec(EXPLORE_TIME))
         # print (self.mode == Mode.EXPLORE and (rospy.get_rostime()-self.explore_start)>rospy.Duration.from_sec(EXPLORE_TIME))
         return (self.mode == Mode.EXPLORE and (rospy.get_rostime()-self.explore_start)>rospy.Duration.from_sec(EXPLORE_TIME))

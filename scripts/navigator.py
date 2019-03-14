@@ -63,7 +63,7 @@ class Navigator:
         self.y = 0.0
         self.theta = 0.0
 
-        # goal state
+        # goal stateoccupancy_updated
         self.x_g = 0.0
         self.y_g = 0.0
         self.theta_g = 0.0
@@ -122,6 +122,7 @@ class Navigator:
         self.map_origin = (msg.origin.position.x,msg.origin.position.y)
 
     def map_callback(self,msg):
+        print("in map_callback method")
         self.map_probs = msg.data
         self.orientation = msg.info.origin.orientation.w
         if self.map_width>0 and self.map_height>0 and len(self.map_probs)>0:

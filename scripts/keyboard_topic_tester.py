@@ -55,7 +55,7 @@ sim_obj_list = ['apple', 'banana', 'blue raspberry', 'elephant']
 sim_obj_dists = [1, 2, 1.5, .75]
 sim_obj_thetas = [np.pi/3, 0, -np.pi/3, 5*np.pi/4]
 
-delivery_list = 'banana,apple'
+delivery_list = 'cake'
 
 def getKey():
     tty.setraw(sys.stdin.fileno())
@@ -86,7 +86,7 @@ if __name__=="__main__":
     stop_pub = rospy.Publisher('/detector/stop_sign', DetectedObject, queue_size=5)
     object_pub = rospy.Publisher('/detector/objects', DetectedObjectList, queue_size=5)
     request_pub = rospy.Publisher('/delivery_request', String, queue_size=5)
-    explore_pub = rospy.Publisher()
+    # explore_pub = rospy.Publisher()
     start_explore_pub = rospy.Publisher('/start_explore', String, queue_size=5)
 
     try:
@@ -106,7 +106,7 @@ if __name__=="__main__":
             elif key == 'f':
                 obj_count+=1
                 # apple_name = 'apple'+str(obj_count)
-                apple_name = 'apple'                
+                apple_name = 'elephant'                
                 fake_apple = makeFakeDetected(id_num=obj_count, name=apple_name)
                 fake_list = DetectedObjectList()
                 fake_list.objects.append(apple_name)
