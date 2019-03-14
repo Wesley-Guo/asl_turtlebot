@@ -65,6 +65,7 @@ class Navigator:
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
+        self.starting = False
 
         # goal stateoccupancy_updated
         self.x_g = 0.0
@@ -302,16 +303,19 @@ class Navigator:
 
             rospy.loginfo("Navigator: Computing navigation plan")
             if problem.solve():
+                self.starting = True
                 # if len(problem.path) > 3:
                     # cubic spline interpolation requires 4 points
                 self.current_plan = problem.path
                 self.current_plan_start_time = rospy.get_rostime()
                 self.current_plan_start_loc = [self.x, self.y]
                 self.occupancy_updated = False
-
+                print("sel current plan 0")
+                print(self.current_plan[0])
+                rospy.logwarn(self.current_plan)
                 self.x_way = self.current_plan[0][0]
                 self.y_way = self.current_plan[0][1]
-                self.theta_way = self.current_plan[0][2]
+                self.theta_way = 0
 
                 # publish plan for visualization
                 path_msg = Path()
@@ -327,12 +331,17 @@ class Navigator:
 
             if self.current_plan:
                 print("publishing plan to pose controller")
-
+                if self.starting:
+                    del self.current_plan[0]
+                    self.starting = False
                 goal = self.current_plan[0]
                 waypt = Pose2D()
                 waypt.x = self.x_way
                 waypt.y = self.y_way
-                waypt.theta = self.theta_way
+                if len(self.current_plan) == 1:
+                    waypt.theta = self.theta_g
+                else:
+                    waypt.theta = self.theta_way
 
                 self.nav_pose_pub.publish(waypt)
 

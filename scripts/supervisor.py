@@ -46,6 +46,7 @@ class Mode(Enum):
     NAV = 5
     MANUAL = 6
     EXPLORE = 7
+    CAPTURE = 8
 
 print "supervisor settings:\n"
 print "use_gazebo = %s\n" % use_gazebo
