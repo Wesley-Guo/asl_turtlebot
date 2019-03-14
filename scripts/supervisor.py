@@ -406,7 +406,7 @@ class Supervisor:
             else:
                 self.nav_to_pose()
         elif self.mode == Mode.CAPTURE:
-            rospy.sleep(1.0)
+            rospy.sleep(10.0)
             self.mode = Mode.NAV
 
         elif self.mode == Mode.NAV:
