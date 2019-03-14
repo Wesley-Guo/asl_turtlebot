@@ -25,6 +25,7 @@ END_POS_THRESH = .2
 # threshold to be far enough into the plan
 # to recompute it
 START_POS_THRESH = .2
+WAYPT_THRESH = 0.03
 
 # thereshold in theta to start moving forward when path following
 THETA_START_THRESH = 0.09
@@ -240,6 +241,9 @@ class Navigator:
     def snap_to_grid(self, x):
         return (self.plan_resolution*round(x[0]/self.plan_resolution), self.plan_resolution*round(x[1]/self.plan_resolution))
 
+    def close_to_astar_waypoint(self,x_way,y_way):
+        return (abs(self.x-x_way)<WAYPT_THRESH and abs(self.y-y_way)<WAYPT_THRESH)
+
     def close_to_start_location(self):
         if len(self.current_plan)>0:
             snapped_current = self.snap_to_grid([self.x, self.y])
@@ -329,26 +333,26 @@ class Navigator:
                     path_msg.poses.append(pose_st)
                 self.nav_path_pub.publish(path_msg)
 
-            if self.current_plan:
-                print("publishing plan to pose controller")
-                if self.starting:
-                    del self.current_plan[0]
-                    self.starting = False
-                goal = self.current_plan[0]
-                waypt = Pose2D()
-                waypt.x = self.x_way
-                waypt.y = self.y_way
-                if len(self.current_plan) == 1:
-                    waypt.theta = self.theta_g
-                else:
-                    waypt.theta = self.theta_way
+        if self.current_plan:
+            print("publishing plan to pose controller")
+            if self.starting:
+                del self.current_plan[0]
+                self.starting = False
+            goal = self.current_plan[0]
+            waypt = Pose2D()
+            waypt.x = self.x_way
+            waypt.y = self.y_way
+            if len(self.current_plan) == 1:
+                waypt.theta = self.theta_g
+            else:
+                waypt.theta = self.theta_way
 
-                self.nav_pose_pub.publish(waypt)
+            self.nav_pose_pub.publish(waypt)
 
-                # print "Goal:", goal
-                
-                if self.close_to(self.x_way,self.y_way, self.theta_way):
-                    del self.current_plan[0]
+            # print "Goal:", goal
+            
+            if self.close_to_astar_waypoint(self.x_way,self.y_way):
+                del self.current_plan[0]
 
 
 
