@@ -41,6 +41,7 @@ import sys, select, termios, tty
 msg = """
 Keyboard tester for simulated state machine transition
 ---------------------------
+e : move to explore mode
 s : stop sign detected
 d : send new delivery request
 f : send simulated object list with one object
@@ -50,9 +51,9 @@ g : send simulated object list with three objects
 CTRL-C to quit
 """
 
-sim_obj_list = ['apple', 'banana', 'blue raspberry']
-sim_obj_dists = [1, 2, 1.5]
-sim_obj_thetas = [np.pi/3, 0, -np.pi/3]
+sim_obj_list = ['apple', 'banana', 'blue raspberry', 'elephant']
+sim_obj_dists = [1, 2, 1.5, .75]
+sim_obj_thetas = [np.pi/3, 0, -np.pi/3, 5*np.pi/4]
 
 delivery_list = 'banana,apple'
 
@@ -86,18 +87,22 @@ if __name__=="__main__":
     object_pub = rospy.Publisher('/detector/objects', DetectedObjectList, queue_size=5)
     request_pub = rospy.Publisher('/delivery_request', String, queue_size=5)
     explore_pub = rospy.Publisher()
+    start_explore_pub = rospy.Publisher('/start_explore', String, queue_size=5)
 
     try:
         print(msg)
         obj_count = 0
         while(1):
             key = getKey()
+            if key == 'e':
+                start_explore_pub.publish('Explore!')
             if key == 's':
                 obj_count+=1
                 fake_sign = makeFakeDetected(id_num=obj_count, name='fake_sign_'+str(obj_count))
                 stop_pub.publish(fake_sign)
             elif key == 'd':
                 request_pub.publish(delivery_list)
+                print "Request for Delivery!"
             elif key == 'f':
                 obj_count+=1
                 # apple_name = 'apple'+str(obj_count)
@@ -111,10 +116,11 @@ if __name__=="__main__":
                 fake_list = DetectedObjectList()
                 for sim_name, sim_dist, sim_offset in zip(sim_obj_list, sim_obj_dists, sim_obj_thetas):
                     obj_count+=1
-                    enum_sim_name = sim_name + str(obj_count)
+                    enum_sim_name = sim_name
                     new_sim_obj = makeFakeDetected(id_num=obj_count, name=enum_sim_name, dist=sim_dist, theta_offset=sim_offset)
                     fake_list.objects.append(enum_sim_name)
                     fake_list.ob_msgs.append(new_sim_obj)
+                print fake_list
                 object_pub.publish(fake_list)
             else:
                 if (key == '\x03'):

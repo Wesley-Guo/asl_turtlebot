@@ -35,7 +35,7 @@ STOP_MIN_DIST = .5
 CROSSING_TIME = 3
 
 # time to autonomously explore
-EXPLORE_TIME = 60
+EXPLORE_TIME = 10
 
 # state machine modes, not all implemented
 class Mode(Enum):
@@ -59,7 +59,10 @@ class Supervisor:
         self.x = 0
         self.y = 0
         self.theta = 0
-        self.mode = Mode.EXPLORE
+        self.mode = Mode.IDLE
+        self.x_g = 0
+        self.y_g = 0
+        self.theta_g = 0
         self.modeBeforeStop = None
         self.last_mode_printed = None
         self.trans_listener = tf.TransformListener()
@@ -78,7 +81,7 @@ class Supervisor:
         self.rviz_goal = False
         self.explore_start = rospy.get_rostime()
         self.marker_array = MarkerArray()
-        self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli','chair',
+        self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli', 'chair', 
                                     'cake','apple','hot dog','banana','donut','pizza','carrot']
 
         if use_gazebo:
@@ -107,8 +110,12 @@ class Supervisor:
         rospy.Subscriber('/delivery_request', String, self.delivery_request_callback)
         # stat exploration from keyboard command subscriber
         # rospy.Subscriber('/keyboard_commands', String, self.keyboard_callback)
+        # Subscriber for keyboard command to move into explore mode
+        rospy.Subscriber('/start_explore', String, self.idle_to_explore_callback)
 
-        
+    def idle_to_explore_callback(self, msg):
+        self.init_explore_start()
+
     def gazebo_callback(self, msg):
         pose = msg.pose[msg.name.index("turtlebot3_burger")]
         twist = msg.twist[msg.name.index("turtlebot3_burger")]
@@ -176,6 +183,7 @@ class Supervisor:
 
     def idle_to_explore_callback(self, msg):
         self.init_explore_start()
+
 
     def add_to_dict(self, object_name, object_msg):
         # pass
@@ -251,18 +259,17 @@ class Supervisor:
         self.marker_array.markers.append(marker)
 
         self.marker_publisher.publish(self.marker_array)
-        
-
-
-   
+    
 
     def delivery_request_callback(self,msg):
         label_list = msg.data.split(',')
         for label in label_list:
+            print "label:", label
             self.goal_list.append(self.objects_dict[label][0])
         #reorder list to make optimal?
         self.goal_list.append(self.objects_dict[self.home_base])
-        self.Mode = Mode.NAV
+        # print "goal list:", self.goal_list
+        self.mode = Mode.NAV
 
     def go_to_pose(self):
         """ sends the current desired pose to the pose controller """
@@ -310,8 +317,10 @@ class Supervisor:
 
     def has_explored(self):
         """ checks if exploration is over """
-        # print(rospy.get_rostime()-self.explore_start)
+        print "Check explore time:"
+        print(rospy.get_rostime()-self.explore_start)
         # print(rospy.Duration.from_sec(EXPLORE_TIME))
+        # print (self.mode == Mode.EXPLORE and (rospy.get_rostime()-self.explore_start)>rospy.Duration.from_sec(EXPLORE_TIME))
         return (self.mode == Mode.EXPLORE and (rospy.get_rostime()-self.explore_start)>rospy.Duration.from_sec(EXPLORE_TIME))
 
     def has_stopped(self):
@@ -356,7 +365,6 @@ class Supervisor:
             # send zero velocity
             self.stay_idle()
             
-
         elif self.mode == Mode.POSE:
             # moving towards a desired pose
             if self.close_to(self.x_g,self.y_g,self.theta_g):
@@ -381,25 +389,25 @@ class Supervisor:
         elif self.mode == Mode.NAV:
             while self.goal_list:
                 goal = self.goal_list[0]
+                # print "Goal:", goal
                 self.x_g = goal.x
                 self.y_g = goal.y
                 self.theta_g = goal.theta
                 self.nav_to_pose()
                 if self.close_to(self.x_g,self.y_g,self.theta_g):
                     del self.goal_list[0]
-            self.Mode = Mode.IDLE 
+            self.mode = Mode.IDLE 
 
         elif self.mode == Mode.EXPLORE:
             # self.init_explore_start()
-            if self.rviz_goal:
+            if self.has_explored():
+                print "have explored"
+                self.mode = Mode.IDLE
+            elif self.rviz_goal:
                 self.nav_to_pose()
                 # print(self.close_to(self.x_g,self.y_g,self.theta_g))
                 if self.close_to(self.x_g,self.y_g,self.theta_g):
                     self.rviz_goal = False
-            if self.has_explored():
-                self.Mode = Mode.IDLE
-            else:
-                pass
 
         else:
             raise Exception('This mode is not supported: %s'
