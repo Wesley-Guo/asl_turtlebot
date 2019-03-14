@@ -17,7 +17,7 @@ def randomPointCloud():
     rate = rospy.Rate(0.5) # 1hz
     while not rospy.is_shutdown():
         
-        cloud_points = np.random.randn(100,2)*0.5
+        cloud_points = np.random.randn(100,2)*0.5 + [0, 1]
         cloud_points = np.hstack((cloud_points, np.zeros((100,1))))
         cloud_points_2 = np.random.randn(100,2)*0.5 + 3
         cloud_points_2 = np.hstack((cloud_points_2, np.zeros((100,1))))
