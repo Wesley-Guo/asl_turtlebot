@@ -145,20 +145,9 @@ class Navigator:
             self.publish_map_mod()
     
     def puddle_callback(self,msg):
-        puddle_repeated = False
-        if self.puddle_list:
-            for puddle in self.puddle_list:
-                puddle_x_difference = puddle[0] - msg.point.x
-                puddle_y_difference = puddle[1] - msg.point.y
-                if puddle_x_difference < 0:
-                    puddle_x_difference *= -1
-                if puddle_y_difference < 0:
-                    puddle_y_difference *= -1
-                if (puddle_x_difference < PUDDLE_TOLERANCE) and (puddle_y_difference < PUDDLE_TOLERANCE):
-                    puddle_repeated = True
-                    break
-        if not puddle_repeated:
-            self.puddle_list.append([msg.point.x,msg.point.y])
+        self.puddle_list = []
+        for puddle in msg:
+            self.puddle_list.append((puddle.x, puddle.y))
             self.publish_map_mod()
     
     def manual_puddle_callback(self,msg):

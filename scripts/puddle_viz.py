@@ -42,17 +42,6 @@ def compute_ellipse_points(a, b):
     y = b * np.sin(th)
     return np.stack([x,y])
 
-def initialize_puddle_marker():
-    puddle_marker = Marker()
-    puddle_marker.header.frame_id = "/puddle"
-    puddle_marker.ns = "ellipse"
-    puddle_marker.type = Marker.LINE_STRIP
-    puddle_marker.scale.x = 0.01
-    puddle_marker.frame_locked = True
-    puddle_marker.color.g = 1
-    puddle_marker.color.a = 1
-    return puddle_marker
-
 class PuddleViz:
     def __init__(self):
         rospy.init_node("puddle_viz")
@@ -60,8 +49,10 @@ class PuddleViz:
         self.tf_listener = tf.TransformListener()
         self.puddle_mean = None
         self.puddle_viz_pub = rospy.Publisher("/viz/puddle", Marker, queue_size=10)
-        self.puddle_world_pub = rospy.Publisher("puddle_world", PointStamped, queue_size=10)
-        self.puddle_marker = initialize_puddle_marker()
+        self.puddle_world_pub = rospy.Publisher("puddle_world", Point[], queue_size=10)
+        self.new_puddles = False
+        self.puddle_thresh = 0.5
+        self.puddle_means = []
         rospy.Subscriber("/velodyne_puddle_filter", PointCloud2, self.velodyne_callback)
 
 
@@ -103,43 +94,73 @@ class PuddleViz:
         z_filtered = z_coords[filtered_points]
         self.puddle_time = msg.header.stamp
 
-        if sum(filtered_points) > MIN_POINTS:
-            self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), np.mean(z_filtered))
-            self.puddle_var = (np.var(x_filtered), np.var(y_filtered), np.var(z_filtered))
+        puddle_indicies_list = self.segment_points(self.xy_filtered)
+        for indicies in puddle_indicies_list:
+            if len(indicies) > MIN_POINTS:
+                puddle_points = self.xy_filtered[indicies, :]
+                self.puddle_means.append((np.mean(puddle_points[:,0]), np.mean(np.mean(puddle_points[:,1])), 0))
+        self.new_puddles = True
 
+    def segment_points(self, filtered):
+        num_points = filtered.shape[0]
+        dist_to_all_others = np.ones((num_points, num_points))*np.inf # distance to self stored as infinity
+        for i in range(num_points):
+            for j in range(num_points):
+                if i != j:
+                    dist_to_all_others[i,j] = np.linalg.norm(filtered[i] - filtered[j])
 
+        clusters = []
+        queue = []
+        unprocessed_points = range(num_points)
+        while len(unprocessed_points)>0:
+            # print("unprocessed list: " + str(unprocessed_points))
+            i = unprocessed_points.pop()
+            # print("currently evaluating: " + str(i))
+            queue.append(i)
+            for q in queue:
+                # print("queue: " + str(queue))
+                # print("processing: " + str(q))
+                dists_to_q = dist_to_all_others[q,:]
+                indicies_within_thresh = np.where(dists_to_q < self.puddle_thresh)[0].tolist()
+                # print("indicies_within_thresh: " + str(indicies_within_thresh))
+                indicies_unqueued = [x for x in indicies_within_thresh if x not in queue]
+                # print("indicies_unqueued: " + str(indicies_unqueued))
+                queue.extend(indicies_unqueued)
+            clusters.append(np.array(queue))
+            unprocessed_points = [j for j in unprocessed_points if j not in queue] # remove all points that were just added to the cluster
+            queue = []
+        return clusters
 
     def loop(self):
-
         if self.puddle_mean is not None:
-            pt = PointStamped()
-            pt.header.frame_id = '/velodyne'
-            pt.header.stamp = self.puddle_time
-            pt.point.x = self.puddle_mean[0]
-            pt.point.y = self.puddle_mean[1]
-            pt.point.z = self.puddle_mean[2]
+            if self.new_puddles:
+                pt = PointStamped()
+                pt.header.frame_id = '/velodyne'
+                pt.header.stamp = self.puddle_time
+                pt.point.x = self.puddle_mean[0]
+                pt.point.y = self.puddle_mean[1]
+                pt.point.z = self.puddle_mean[2]
 
-            try:
-                # send a tf transform of the puddle location in the map frame
-                self.tf_listener.waitForTransform("/map", '/velodyne', self.puddle_time, rospy.Duration(.05))
-                puddle_map_pt = self.tf_listener.transformPoint("/map", pt)
-                self.puddle_broadcaster.sendTransform((puddle_map_pt.point.x, puddle_map_pt.point.y, puddle_map_pt.point.z), 
-                                                       [0, 0, 0, 1],
-                                                       self.puddle_time,
-                                                       "/puddle",
-                                                       "/map")
-                
-                # make puddle marker
-                ellipse_points = compute_ellipse_points(0.2, 0.2)
-                self.puddle_marker.points = []
-                for i in range(ellipse_points.shape[-1]):
-                    # print("drawing ellipse")
-                    self.puddle_marker.points.append(Point(ellipse_points[0,i], ellipse_points[1,i], 0)) 
-                self.puddle_world_pub.publish(puddle_map_pt)
-                self.puddle_viz_pub.publish(self.puddle_marker)
+                try:
+                    # send a tf transform of the puddle location in the map frame
+                    self.tf_listener.waitForTransform("/map", '/velodyne', self.puddle_time, rospy.Duration(.05))
+                    puddle_center_message = []
+                    for i in range(len(self.puddle_means)):
+                        puddle_mean = self.puddle_means[i]
+                        chull = self.convex_hulls[i]
+                        self.puddle_broadcaster.sendTransform((puddle_mean[0], puddle_mean[1], puddle_mean[2]), 
+                                                               [0,0,0,1],
+                                                               self.puddle_time,
+                                                               "/puddle" + str(i),
+                                                               "/map") 
+                        puddle_center = Point(puddle_mean[0], puddle_mean[1], puddle_mean[2])
+                        puddle_center_message.append(puddle_center)
+                    self.puddle_world_pub.publish(puddle_center_message)
+                    self.new_puddles = False
 
-            except:
-                pass
+                except:
+                    print("a looping error occured")
+                    pass
 
 
     def run(self):
