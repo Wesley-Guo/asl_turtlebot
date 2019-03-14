@@ -55,7 +55,7 @@ sim_obj_list = ['apple', 'banana', 'blue raspberry', 'elephant']
 sim_obj_dists = [1, 2, 1.5, .75]
 sim_obj_thetas = [np.pi/3, 0, -np.pi/3, 5*np.pi/4]
 
-delivery_list = 'cake'
+delivery_list = 'cup,cake'
 
 def getKey():
     tty.setraw(sys.stdin.fileno())

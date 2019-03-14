@@ -10,7 +10,6 @@ import tf.msg
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 from visualization_msgs.msg import Marker, MarkerArray
 import math
-from astar import 
 from enum import Enum
 import numpy as np
 
@@ -84,7 +83,7 @@ class Supervisor:
         self.explore_start = rospy.get_rostime()
         self.marker_array = MarkerArray()
         self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli', 
-                                    'cake','apple','hot dog','banana','donut','pizza','carrot','bottle'] #chair removed!
+                                    'cake','apple','hot dog','banana','donut','pizza','carrot','bottle','cup'] #chair removed!
 
         if use_gazebo:
             self.camera_frame_id = '/base_camera'
@@ -178,7 +177,7 @@ class Supervisor:
     def object_list_callback(self, msg):
         if self.mode == Mode.EXPLORE:
             for i in range(len(msg.objects)):
-                if msg.objects[i] in  self.acceptable_objects and msg.ob_msgs[i].confidence > 0.5 and msg.ob_msgs[i].distance < 1.0:
+                if msg.objects[i] in  self.acceptable_objects: #and msg.ob_msgs[i].confidence > 0.5 and msg.ob_msgs[i].distance < 1.0:
                     self.add_to_dict(msg.objects[i], msg.ob_msgs[i])
                     rospy.loginfo(msg.objects[i])
         # print("added all to dict")
@@ -191,68 +190,68 @@ class Supervisor:
     def add_to_dict(self, object_name, object_msg):
         # pass
         dist = object_msg.distance
-        self.debug_publisher.publish( object_name + " distance")
-        self.debug_publisher.publish(str(dist))
-        theta_left = object_msg.thetaleft
-        theta_right = object_msg.thetaright
-        theta_mid = 0
-        if theta_left >= theta_right:
-            theta_mid = (theta_left+theta_right)/2
-        else:
-            theta_mid = (theta_left + (theta_right - 2*np.pi))/2
+        # self.debug_publisher.publish( object_name + " distance")
+        # self.debug_publisher.publish(str(dist))
+        # theta_left = object_msg.thetaleft
+        # theta_right = object_msg.thetaright
+        # theta_mid = 0
+        # if theta_left >= theta_right:
+        #     theta_mid = (theta_left+theta_right)/2
+        # else:
+        #     theta_mid = (theta_left + (theta_right - 2*np.pi))/2
 
-        if theta_mid < np.pi/3 and theta_mid > -np.pi/3:
-            self.debug_publisher.publish("theta_right:" + str(theta_right))
-            self.debug_publisher.publish("theta_left:" + str(theta_left))
-            self.debug_publisher.publish("theta_mid:" + str(theta_mid))
-            self.debug_publisher.publish("dist:" + str(dist))
-            pt = PoseStamped()
-            pt.header.frame_id = self.camera_frame_id
-            pt.header.stamp = rospy.Time(0)
-            pt.pose.position.x = dist*np.sin(theta_mid)
-            pt.pose.position.y = 0
-            pt.pose.position.z = dist*np.cos(theta_mid) - 0.4
-            quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
-            pt.pose.orientation.x = quat[0]
-            pt.pose.orientation.y = quat[1]
-            pt.pose.orientation.z = quat[2]
-            pt.pose.orientation.w = quat[3]
+        #if theta_mid < np.pi/3 and theta_mid > -np.pi/3:
+        # self.debug_publisher.publish("theta_right:" + str(theta_right))
+        # self.debug_publisher.publish("theta_left:" + str(theta_left))
+        # self.debug_publisher.publish("theta_mid:" + str(theta_mid))
+        # self.debug_publisher.publish("dist:" + str(dist))
+        # pt = PoseStamped()
+        # pt.header.frame_id = self.camera_frame_id
+        # pt.header.stamp = rospy.Time(0)
+        # pt.pose.position.x = self.x#dist*np.sin(theta_mid)
+        # pt.pose.position.y = self.y#0
+        # pt.pose.position.z = 0#dist*np.cos(theta_mid) - 0.4
+        # quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
+        # pt.pose.orientation.x = 0#quat[0]
+        # pt.pose.orientation.y = 0#quat[1]
+        # pt.pose.orientation.z = 0#quat[2]
+        # pt.pose.orientation.w = 1#quat[3]
 
-            self.trans_listener.waitForTransform(pt.header.frame_id, "/map", rospy.Time(0), rospy.Duration(1.0))
-            object_map_pt = self.trans_listener.transformPose("/map", pt)
+        # self.trans_listener.waitForTransform(pt.header.frame_id, "/map", rospy.Time(0), rospy.Duration(1.0))
+        # object_map_pt = self.trans_listener.transformPose("/map", pt)
 
-            euler_angles = tf.transformations.euler_from_quaternion([object_map_pt.pose.orientation.x,object_map_pt.pose.orientation.y,
-                                                                        object_map_pt.pose.orientation.z, object_map_pt.pose.orientation.w])
-
+        # euler_angles = tf.transformations.euler_from_quaternion([object_map_pt.pose.orientation.x,object_map_pt.pose.orientation.y,
+                                                                    # object_map_pt.pose.orientation.z, object_map_pt.pose.orientation.w])
+        if dist < 0.8:                                                            
             object_map_pose = Pose2D()
-            object_map_pose.x = object_map_pt.pose.position.x
-            object_map_pose.y = object_map_pt.pose.position.y
-            object_map_pose.theta = euler_angles[2]
+            object_map_pose.x = self.x#object_map_pt.pose.position.x
+            object_map_pose.y = self.y#object_map_pt.pose.position.y
+            object_map_pose.theta = self.theta#euler_angles[2]
 
-            if object_name in self.objects_dict:
-                sumWeights = self.objects_dict[object_name][4]
-                sumCoords_theta = self.objects_dict[object_name][3]
-                sumCoords_y = self.objects_dict[object_name][2]
-                sumCoords_x = self.objects_dict[object_name][1]
-                prevPoint = self.objects_dict[object_name][0]
-                # don't average if the distance is nota number. 
-                if not(np.isnan(object_map_pose.x) and np.isnan(object_map_pose.y)):
-                    newPointVec = [(((object_map_pose.x*np.cos(theta_mid))+ sumCoords_x)/(sumWeights+np.cos(theta_mid))), 
-                                    (((object_map_pose.y*np.cos(theta_mid))+ sumCoords_y)/(sumWeights+np.cos(theta_mid))), 
-                                        (((object_map_pose.theta*np.cos(theta_mid))+ sumCoords_theta)/(sumWeights+np.cos(theta_mid)))]
-                    newPoint = Pose2D()
-                    newPoint.x = newPointVec[0]
-                    newPoint.y = newPointVec[1]
-                    newPoint.theta = newPointVec[2]
-                    self.objects_dict[object_name] = (newPoint, sumCoords_x + (object_map_pose.x*np.cos(theta_mid)),
-                                                        sumCoords_y + (object_map_pose.y*np.cos(theta_mid)),
-                                                        sumCoords_theta + (object_map_pose.theta*np.cos(theta_mid)),
-                                                         sumWeights + np.cos(theta_mid))
-            else:
-                self.objects_dict[object_name] = (object_map_pose, (object_map_pose.x*np.cos(theta_mid)),
-                                                    (object_map_pose.y*np.cos(theta_mid)),
-                                                    (object_map_pose.theta*np.cos(theta_mid)),
-                                                    np.cos(theta_mid))
+            # if object_name in self.objects_dict:
+            #     sumWeights = self.objects_dict[object_name][4]
+            #     sumCoords_theta = self.objects_dict[object_name][3]
+            #     sumCoords_y = self.objects_dict[object_name][2]
+            #     sumCoords_x = self.objects_dict[object_name][1]
+            #     prevPoint = self.objects_dict[object_name][0]
+            #     # don't average if the distance is nota number. 
+            #     if not(np.isnan(object_map_pose.x) and np.isnan(object_map_pose.y)):
+            #         newPointVec = [(((object_map_pose.x*np.cos(theta_mid))+ sumCoords_x)/(sumWeights+np.cos(theta_mid))), 
+            #                         (((object_map_pose.y*np.cos(theta_mid))+ sumCoords_y)/(sumWeights+np.cos(theta_mid))), 
+            #                             (((object_map_pose.theta*np.cos(theta_mid))+ sumCoords_theta)/(sumWeights+np.cos(theta_mid)))]
+            #         newPoint = Pose2D()
+            #         newPoint.x = newPointVec[0]
+            #         newPoint.y = newPointVec[1]
+            #         newPoint.theta = newPointVec[2]
+            #         self.objects_dict[object_name] = (newPoint, sumCoords_x + (object_map_pose.x*np.cos(theta_mid)),
+            #                                             sumCoords_y + (object_map_pose.y*np.cos(theta_mid)),
+            #                                             sumCoords_theta + (object_map_pose.theta*np.cos(theta_mid)),
+            #                                              sumWeights + np.cos(theta_mid))
+            if object_name not in self.objects_dict:
+                self.objects_dict[object_name] = object_map_pose #, (object_map_pose.x*np.cos(theta_mid)),
+                                                    # (object_map_pose.y*np.cos(theta_mid)),
+                                                    # (object_map_pose.theta*np.cos(theta_mid)),
+                                                    # np.cos(theta_mid))
 
             marker = Marker()
             marker.header.frame_id = "/map"
@@ -268,8 +267,8 @@ class Supervisor:
             marker.color.g = 0.0
             marker.color.b = 0.0
             marker.pose.orientation.w = 1.0
-            marker.pose.position.x = self.objects_dict[object_name][0].x
-            marker.pose.position.y = self.objects_dict[object_name][0].y
+            marker.pose.position.x = self.objects_dict[object_name].x
+            marker.pose.position.y = self.objects_dict[object_name].y
             marker.pose.position.z = 0
             self.marker_array.markers.append(marker)
             print("adding marker at x: %d, y: %d", marker.pose.position.x, marker.pose.position.y)
@@ -281,7 +280,7 @@ class Supervisor:
         label_list = msg.data.split(',')
         for label in label_list:
             self.debug_publisher.publish("label: " + label)
-            self.goal_list.append(self.objects_dict[label][0])
+            self.goal_list.append(self.objects_dict[label])
         #reorder list to make optimal?
         self.goal_list.append(self.objects_dict[self.home_base])
         # print "goal list:", self.goal_list

@@ -32,10 +32,10 @@ THETA_START_THRESH = 0.09
 THETA_START_P = 1
 
 # maximum velocity
-V_MAX = .2
+V_MAX = .1
 
 # maximim angular velocity
-W_MAX = .3
+W_MAX = .2
 
 # desired crusing velocity
 V_DES = 0.12
@@ -114,7 +114,7 @@ class Navigator:
     #     x_point = msg.x
     #     y_point = msg.y
     #     z_point = msg.z
-        
+
 
     def cmd_nav_callback(self, data):
         self.x_g = data.x
@@ -308,6 +308,8 @@ class Navigator:
                         pose_st.header.frame_id = 'map'
                         path_msg.poses.append(pose_st)
                     self.nav_path_pub.publish(path_msg)
+
+                    
 
                     path_t = [0]
                     path_x = [self.current_plan[0][0]]
