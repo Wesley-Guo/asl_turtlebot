@@ -5,7 +5,7 @@ import tf
 import tf.msg
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 from geometry_msgs.msg import PointStamped, Point, Polygon, PolygonStamped, Point32, Quaternion
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 
 # look up doc.
 import sensor_msgs.point_cloud2 as pc2
@@ -35,7 +35,7 @@ Although this "works", it is not perfect and it can be significantly improved.
 MIN_POINTS = 3
 
 # look ahead distance to search for puddles
-RHO = 1.5
+RHO = 10
 
 def compute_convex_hull(xy_filtered):
     hull = ConvexHull(xy_filtered)
@@ -60,13 +60,13 @@ class PuddleViz:
         rospy.init_node("puddle_viz")
         self.puddle_broadcaster = tf.TransformBroadcaster()
         self.tf_listener = tf.TransformListener()
-        self.puddle_mean = None
-        self.puddle_viz_pub = rospy.Publisher("/viz/puddle", Marker, queue_size=10)
-        self.puddle_marker = initialize_puddle_marker()
+        self.puddle_viz_pub = rospy.Publisher("/viz/puddle", MarkerArray, queue_size=10)
         self.xy_filtered = np.zeros((0,2))
-        self.convex_hull = None
-        self.new_puddle = False
+        self.new_puddles = False
         self.puddle_thresh = 0.5
+        self.puddle_means = []
+        self.puddle_markers = []
+        self.convex_hulls = []
 
         rospy.Subscriber("/sample_puddle", PointCloud2, self.velodyne_callback)
 
@@ -77,6 +77,9 @@ class PuddleViz:
         pc2.read_points creates an _iterator_ object.
         '''
         print('recieved point cloud data')
+        self.puddle_means = []
+        self.puddle_markers = []
+        self.convex_hulls = []
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
         num_points = len(list(lidar_info))
         lidar_info = pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z"))
@@ -99,7 +102,7 @@ class PuddleViz:
         pts_within_range = (pt_ranges < RHO)
 
         # filter based on angle
-        pts_within_angle = (pt_angles < np.pi/6) & (pt_angles > -np.pi/6)
+        pts_within_angle = (pt_angles < np.pi) & (pt_angles > -np.pi)
 
         # filtered points
         filtered_points = pts_within_range & pts_within_angle
@@ -114,12 +117,14 @@ class PuddleViz:
         z_filtered = z_coords[filtered_points]
         self.puddle_time = msg.header.stamp
 
-        if sum(filtered_points) > MIN_POINTS:
-            puddle_list = self.segment_points(self.xy_filtered)
-            # self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), 0)
-            # self.convex_hull = compute_convex_hull(self.xy_filtered)
-            print('created puddle hulls')
-            self.new_puddle = True
+        puddle_indicies_list = self.segment_points(self.xy_filtered)
+        for indicies in puddle_indicies_list:
+            if len(indicies) > MIN_POINTS:
+                puddle_points = self.xy_filtered[indicies, :]
+                self.puddle_means.append((np.mean(puddle_points[:,0]), np.mean(np.mean(puddle_points[:,1])), 0))
+                self.convex_hulls.append(compute_convex_hull(puddle_points))
+        print('created puddle hulls')
+        self.new_puddles = True
 
     def segment_points(self, filtered):
         num_points = filtered.shape[0]
@@ -133,41 +138,51 @@ class PuddleViz:
         queue = []
         unprocessed_points = range(num_points)
         while len(unprocessed_points)>0:
+            # print("unprocessed list: " + str(unprocessed_points))
             i = unprocessed_points.pop()
-            processed = []
+            # print("currently evaluating: " + str(i))
             queue.append(i)
             for q in queue:
-                processed.append(q)
+                # print("queue: " + str(queue))
+                # print("processing: " + str(q))
                 dists_to_q = dist_to_all_others[q,:]
                 indicies_within_thresh = np.where(dists_to_q < self.puddle_thresh)[0].tolist()
-                indicies_unprocessed = [x for x in indicies_within_thresh if x not in processed]
-                queue.extend(indicies_unprocessed)
+                # print("indicies_within_thresh: " + str(indicies_within_thresh))
+                indicies_unqueued = [x for x in indicies_within_thresh if x not in queue]
+                # print("indicies_unqueued: " + str(indicies_unqueued))
+                queue.extend(indicies_unqueued)
             clusters.append(np.array(queue))
             unprocessed_points = [j for j in unprocessed_points if j not in queue] # remove all points that were just added to the cluster
+            queue = []
         return clusters
 
     def loop(self):
-        if self.convex_hull is not None:
-            if self.new_puddle:
+        if self.convex_hulls is not None:
+            if self.new_puddles:
                 # send fixed transform to puddle center for simulated data
-                self.puddle_broadcaster.sendTransform((self.puddle_mean[0], self.puddle_mean[1], 
-                                                       self.puddle_mean[2]), 
-                                                       [0,0,0,1],
-                                                       self.puddle_time,
-                                                       "/puddle",
-                                                       "/map")
-                print('transform sent')
-                
-                # make puddle marker
-                zeros = np.zeros((self.xy_filtered[self.convex_hull.vertices].shape[0],))
-                pointlist = self.xy_filtered[self.convex_hull.vertices]
-                pointlist = np.vstack((pointlist, pointlist[0,:]))
-                self.puddle_marker.points = []
-                for p in pointlist:
-                    self.puddle_marker.points.append(Point(p[0], p[1], 0))
-                self.puddle_marker.points
-                self.puddle_viz_pub.publish(self.puddle_marker)
-                self.new_puddle = False
+                print(self.xy_filtered)
+                for i in range(len(self.puddle_means)):
+                    puddle_mean = self.puddle_means[i]
+                    chull = self.convex_hulls[i]
+                    self.puddle_broadcaster.sendTransform((puddle_mean[0], puddle_mean[1], puddle_mean[2]), 
+                                                           [0,0,0,1],
+                                                           self.puddle_time,
+                                                           "/puddle" + str(i),
+                                                           "/map")
+                    if i == 0:
+                        pointlist = self.xy_filtered[chull.vertices, :]
+                        pointlist = np.vstack((pointlist, pointlist[0,:]))
+                        pointlist = pointlist
+                        print(pointlist)
+                        chull_marker = initialize_puddle_marker()
+                        # chull_marker.header.frame_id = "/puddle" + str(i)
+                        chull_marker.points = []
+                        for p in pointlist:
+                            chull_marker.points.append(Point(p[0], p[1], 0))
+                        chull_marker.pose.position = Point(puddle_mean[0], puddle_mean[1], 0)
+                        self.puddle_markers.append(chull_marker)
+                self.puddle_viz_pub.publish(self.puddle_markers)
+                self.new_puddles = False
 
     def run(self):
         rate = rospy.Rate(25) # 25 Hz
