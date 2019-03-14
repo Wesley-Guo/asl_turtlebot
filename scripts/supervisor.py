@@ -229,7 +229,7 @@ class Supervisor:
         if object_name in self.objects_dict:
             sumWeights = self.objects_dict[object_name][4]
             sumCoords_theta = self.objects_dict[object_name][3]
-            sumCoords_y = self.objects_dict[objects_name][2]
+            sumCoords_y = self.objects_dict[object_name][2]
             sumCoords_x = self.objects_dict[object_name][1]
             prevPoint = self.objects_dict[object_name][0]
             # don't average if the distance is nota number. 
