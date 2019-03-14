@@ -168,10 +168,11 @@ class Supervisor:
     def object_list_callback(self, msg):
         if self.mode == Mode.EXPLORE:
             for i in range(len(msg.objects)):
-                if msg.objects[i] in  self.acceptable_objects and msg.object_msgs[i].confidence > 0.6:
+                if msg.objects[i] in  self.acceptable_objects and msg.ob_msgs[i].confidence > 0.5:
                     self.add_to_dict(msg.objects[i], msg.ob_msgs[i])
-        # print("added all to dict")
-        # print(self.objects_dict)
+                    rospy.loginfo(msg.objects[i])
+        print("added all to dict")
+        print(self.objects_dict)
 
     def idle_to_explore_callback(self, msg):
         self.init_explore_start()
@@ -219,14 +220,16 @@ class Supervisor:
         if object_name in self.objects_dict:
             prevCount = self.objects_dict[object_name][1]
             prevPoint = self.objects_dict[object_name][0]
-            newPointVec = [((object_map_pose.x+(prevPoint.x*prevCount))/(prevCount+1)), 
-                            ((object_map_pose.y+(prevPoint.y*prevCount))/(prevCount+1)), 
-                                ((object_map_pose.theta+(prevPoint.theta*prevCount))/(prevCount+1))]
-            newPoint = Pose2D()
-            newPoint.x = newPointVec[0]
-            newPoint.y = newPointVec[1]
-            newPoint.theta = newPointVec[2]
-            self.objects_dict[object_name] = (newPoint, prevCount+ 1)
+            # don't average if the distance is nota number. 
+            if not(np.isnan(object_map_pose.x) and np.isnan(object_map_pose.y)):
+                newPointVec = [((object_map_pose.x+(prevPoint.x*prevCount))/(prevCount+1)), 
+                                ((object_map_pose.y+(prevPoint.y*prevCount))/(prevCount+1)), 
+                                    ((object_map_pose.theta+(prevPoint.theta*prevCount))/(prevCount+1))]
+                newPoint = Pose2D()
+                newPoint.x = newPointVec[0]
+                newPoint.y = newPointVec[1]
+                newPoint.theta = newPointVec[2]
+                self.objects_dict[object_name] = (newPoint, prevCount+ 1)
         else:
             self.objects_dict[object_name] = (object_map_pose, 1)
 
@@ -238,6 +241,9 @@ class Supervisor:
         marker.scale.y = 0.2
         marker.scale.z = 0.2
         marker.color.a = 1.0
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
         marker.pose.orientation.w = 1.0
         marker.pose.position.x = self.objects_dict[object_name][0].x
         marker.pose.position.y = self.objects_dict[object_name][0].y
