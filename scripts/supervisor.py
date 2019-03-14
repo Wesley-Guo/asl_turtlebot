@@ -404,7 +404,10 @@ class Supervisor:
                 self.mode = self.modeBeforeStop
             else:
                 self.nav_to_pose()
-
+        elif self.mode == Mode.CAPTURE:
+            rospy.sleep(1.0)
+            self.mode = Mode.NAV
+            
         elif self.mode == Mode.NAV:
             if self.goal_list:
                 goal = self.goal_list[0]
@@ -422,6 +425,7 @@ class Supervisor:
                 self.nav_to_pose()
                 if self.close_to_delivery(self.x_g,self.y_g):
                     del self.goal_list[0]
+                    self.mode = Mode.CAPTURE
             else:
                 self.mode = Mode.IDLE 
 
