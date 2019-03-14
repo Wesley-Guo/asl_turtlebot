@@ -85,6 +85,7 @@ if __name__=="__main__":
     stop_pub = rospy.Publisher('/detector/stop_sign', DetectedObject, queue_size=5)
     object_pub = rospy.Publisher('/detector/objects', DetectedObjectList, queue_size=5)
     request_pub = rospy.Publisher('/delivery_request', String, queue_size=5)
+    explore_pub = rospy.Publisher()
 
     try:
         print(msg)
