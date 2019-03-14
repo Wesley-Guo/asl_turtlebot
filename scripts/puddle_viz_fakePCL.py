@@ -65,8 +65,10 @@ class PuddleViz:
         self.puddle_marker = initialize_puddle_marker()
         self.xy_filtered = np.zeros((0,2))
         self.convex_hull = None
-        rospy.Subscriber("/sample_puddle", PointCloud2, self.velodyne_callback)
         self.new_puddle = False
+        self.puddle_thresh = 0.5
+
+        rospy.Subscriber("/sample_puddle", PointCloud2, self.velodyne_callback)
 
 
     def velodyne_callback(self, msg):
@@ -113,12 +115,36 @@ class PuddleViz:
         self.puddle_time = msg.header.stamp
 
         if sum(filtered_points) > MIN_POINTS:
-            self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), 0)
-            self.convex_hull = compute_convex_hull(self.xy_filtered)
-            print('created puddle hull')
+            puddle_list = self.segment_points(self.xy_filtered)
+            # self.puddle_mean = (np.mean(x_filtered), np.mean(y_filtered), 0)
+            # self.convex_hull = compute_convex_hull(self.xy_filtered)
+            print('created puddle hulls')
             self.new_puddle = True
 
+    def segment_points(self, filtered):
+        num_points = filtered.shape[0]
+        dist_to_all_others = np.ones((num_points, num_points))*np.inf # distance to self stored as infinity
+        for i in range(num_points):
+            for j in range(num_points):
+                if i != j:
+                    dist_to_all_others[i,j] = np.linalg.norm(filtered[i] - filtered[j])
 
+        clusters = []
+        queue = []
+        unprocessed_points = range(num_points)
+        while len(unprocessed_points)>0:
+            i = unprocessed_points.pop()
+            processed = []
+            queue.append(i)
+            for q in queue:
+                processed.append(q)
+                dists_to_q = dist_to_all_others[q,:]
+                indicies_within_thresh = np.where(dists_to_q < self.puddle_thresh)[0].tolist()
+                indicies_unprocessed = [x for x in indicies_within_thresh if x not in processed]
+                queue.extend(indicies_unprocessed)
+            clusters.append(np.array(queue))
+            unprocessed_points = [j for j in unprocessed_points if j not in queue] # remove all points that were just added to the cluster
+        return clusters
 
     def loop(self):
         if self.convex_hull is not None:
