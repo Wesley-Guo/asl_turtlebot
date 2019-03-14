@@ -135,7 +135,7 @@ class Navigator:
                                                   self.map_probs)
             self.occupancy_updated = True
             
-        self.publish_map_mod()
+            self.publish_map_mod()
     
     def puddle_callback(self,msg):
         puddle_repeated = False
@@ -159,7 +159,7 @@ class Navigator:
             
     def publish_map_mod(self):
         self.astar_occupancy = copy.copy(self.occupancy)
-        self.conflate_obstacles()
+        #self.conflate_obstacles()
         if self.puddle_list:
             self.puddle_to_occupancy()
         msg2send = OccupancyGrid()
@@ -264,6 +264,7 @@ class Navigator:
             x_init = self.snap_to_grid((self.x, self.y))
             x_goal = self.snap_to_grid((self.x_g, self.y_g))
 
+            # check if the init is free (in case we hit a wall)
             
             #self.astar_occupancy = copy.copy(self.occupancy)
             #self.conflate_obstacles()
@@ -271,6 +272,9 @@ class Navigator:
             #if self.puddle_list:
             #    self.puddle_to_occupancy()
             problem = AStar(state_min,state_max,x_init,x_goal,self.astar_occupancy,self.plan_resolution)
+            rospy.logwarn("Is x_init in obstacle?")
+            rospy.logwarn(problem.is_free(x_init))
+
 
             rospy.loginfo("Navigator: Computing navigation plan")
             if problem.solve():

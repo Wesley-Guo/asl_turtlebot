@@ -33,7 +33,7 @@ import rospy
 
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
-from asl_turtlebot_project_team13.msg import DetectedObject, DetectedObjectList
+from asl_turtlebot.msg import DetectedObject, DetectedObjectList
 import numpy as np
 
 import sys, select, termios, tty

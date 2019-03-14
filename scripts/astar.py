@@ -26,8 +26,10 @@ class AStar(object):
 
         self.path = None        # the final path as a list of states
 
+
+    
     # Checks if a give state is free, meaning it is inside the bounds of the map and
-    # is not inside any obstacle
+    # is not inside any obstacle()
     # INPUT: (x)
     #          x - tuple state
     # OUTPUT: Boolean True/False

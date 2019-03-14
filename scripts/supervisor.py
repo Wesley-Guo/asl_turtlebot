@@ -75,7 +75,7 @@ class Supervisor:
         self.marker_publisher = rospy.Publisher('/marker_array', MarkerArray, queue_size=10)
         self.objects_dict = {}
         self.delivery_requests = []
-        self.home_base = "elephant"
+        self.home_base = "bottle"
         self.home_base_dict = {}
         self.goal_list = []
         self.rviz_goal = False
