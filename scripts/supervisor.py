@@ -10,6 +10,7 @@ import tf.msg
 from tf.transformations import quaternion_from_euler, euler_from_quaternion
 from visualization_msgs.msg import Marker, MarkerArray
 import math
+from astar import 
 from enum import Enum
 import numpy as np
 
@@ -35,7 +36,7 @@ STOP_MIN_DIST = .5
 CROSSING_TIME = 3
 
 # time to autonomously explore
-EXPLORE_TIME = 120
+EXPLORE_TIME = 240
 
 # state machine modes, not all implemented
 class Mode(Enum):
@@ -73,6 +74,7 @@ class Supervisor:
         # command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
         self.marker_publisher = rospy.Publisher('/marker_array', MarkerArray, queue_size=10)
+        self.debug_publisher = rospy.Publisher('/super_debug', String, queue_size=10)
         self.objects_dict = {}
         self.delivery_requests = []
         self.home_base = "bottle"
@@ -81,8 +83,8 @@ class Supervisor:
         self.rviz_goal = False
         self.explore_start = rospy.get_rostime()
         self.marker_array = MarkerArray()
-        self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli', 'chair', 
-                                    'cake','apple','hot dog','banana','donut','pizza','carrot']
+        self.acceptable_objects = ['pizza','orange','sandwich','elephant', 'broccoli', 
+                                    'cake','apple','hot dog','banana','donut','pizza','carrot','bottle'] #chair removed!
 
         if use_gazebo:
             self.camera_frame_id = '/base_camera'
@@ -167,8 +169,8 @@ class Supervisor:
 
         # distance of the stop sign
         dist = msg.distance
-        print("stop sign distance")
-        print(dist)
+        self.debug_publisher.publish("stop sign distance")
+        self.debug_publisher.publish(str(dist))
         # if close enough and in nav mode, stop
         if dist > 0 and dist < STOP_MIN_DIST and self.mode == Mode.NAV or self.mode == Mode.EXPLORE:
             self.init_stop_sign()
@@ -176,7 +178,7 @@ class Supervisor:
     def object_list_callback(self, msg):
         if self.mode == Mode.EXPLORE:
             for i in range(len(msg.objects)):
-                if msg.objects[i] in  self.acceptable_objects and msg.ob_msgs[i].confidence > 0.5:
+                if msg.objects[i] in  self.acceptable_objects and msg.ob_msgs[i].confidence > 0.5 and msg.ob_msgs[i].distance < 1.0:
                     self.add_to_dict(msg.objects[i], msg.ob_msgs[i])
                     rospy.loginfo(msg.objects[i])
         # print("added all to dict")
@@ -189,8 +191,8 @@ class Supervisor:
     def add_to_dict(self, object_name, object_msg):
         # pass
         dist = object_msg.distance
-        print( object_name + " distance")
-        print(dist)
+        self.debug_publisher.publish( object_name + " distance")
+        self.debug_publisher.publish(str(dist))
         theta_left = object_msg.thetaleft
         theta_right = object_msg.thetaright
         theta_mid = 0
@@ -199,82 +201,86 @@ class Supervisor:
         else:
             theta_mid = (theta_left + (theta_right - 2*np.pi))/2
 
-        print("theta_right:" + str(theta_right))
-        print("theta_left:" + str(theta_left))
-        print("theta_mid:" + str(theta_mid))
-        print("dist:" + str(dist))
-        pt = PoseStamped()
-        pt.header.frame_id = self.camera_frame_id
-        pt.header.stamp = rospy.Time(0)
-        pt.pose.position.x = dist*np.sin(theta_mid)
-        pt.pose.position.y = 0
-        pt.pose.position.z = dist*np.cos(theta_mid) - 0.2
-        quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
-        pt.pose.orientation.x = quat[0]
-        pt.pose.orientation.y = quat[1]
-        pt.pose.orientation.z = quat[2]
-        pt.pose.orientation.w = quat[3]
+        if theta_mid < np.pi/3 and theta_mid > -np.pi/3:
+            self.debug_publisher.publish("theta_right:" + str(theta_right))
+            self.debug_publisher.publish("theta_left:" + str(theta_left))
+            self.debug_publisher.publish("theta_mid:" + str(theta_mid))
+            self.debug_publisher.publish("dist:" + str(dist))
+            pt = PoseStamped()
+            pt.header.frame_id = self.camera_frame_id
+            pt.header.stamp = rospy.Time(0)
+            pt.pose.position.x = dist*np.sin(theta_mid)
+            pt.pose.position.y = 0
+            pt.pose.position.z = dist*np.cos(theta_mid) - 0.4
+            quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
+            pt.pose.orientation.x = quat[0]
+            pt.pose.orientation.y = quat[1]
+            pt.pose.orientation.z = quat[2]
+            pt.pose.orientation.w = quat[3]
 
-        self.trans_listener.waitForTransform(pt.header.frame_id, "/map", rospy.Time(0), rospy.Duration(1.0))
-        object_map_pt = self.trans_listener.transformPose("/map", pt)
+            self.trans_listener.waitForTransform(pt.header.frame_id, "/map", rospy.Time(0), rospy.Duration(1.0))
+            object_map_pt = self.trans_listener.transformPose("/map", pt)
 
-        euler_angles = tf.transformations.euler_from_quaternion([object_map_pt.pose.orientation.x,object_map_pt.pose.orientation.y,
-                                                                    object_map_pt.pose.orientation.z, object_map_pt.pose.orientation.w])
+            euler_angles = tf.transformations.euler_from_quaternion([object_map_pt.pose.orientation.x,object_map_pt.pose.orientation.y,
+                                                                        object_map_pt.pose.orientation.z, object_map_pt.pose.orientation.w])
 
-        object_map_pose = Pose2D()
-        object_map_pose.x = object_map_pt.pose.position.x
-        object_map_pose.y = object_map_pt.pose.position.y
-        object_map_pose.theta = euler_angles[2]
+            object_map_pose = Pose2D()
+            object_map_pose.x = object_map_pt.pose.position.x
+            object_map_pose.y = object_map_pt.pose.position.y
+            object_map_pose.theta = euler_angles[2]
 
-        if object_name in self.objects_dict:
-            sumWeights = self.objects_dict[object_name][4]
-            sumCoords_theta = self.objects_dict[object_name][3]
-            sumCoords_y = self.objects_dict[object_name][2]
-            sumCoords_x = self.objects_dict[object_name][1]
-            prevPoint = self.objects_dict[object_name][0]
-            # don't average if the distance is nota number. 
-            if not(np.isnan(object_map_pose.x) and np.isnan(object_map_pose.y)):
-                newPointVec = [(((object_map_pose.x*np.cos(theta_mid))+ sumCoords_x)/(sumWeights+np.cos(theta_mid))), 
-                                (((object_map_pose.y*np.cos(theta_mid))+ sumCoords_y)/(sumWeights+np.cos(theta_mid))), 
-                                    (((object_map_pose.theta*np.cos(theta_mid))+ sumCoords_theta)/(sumWeights+np.cos(theta_mid)))]
-                newPoint = Pose2D()
-                newPoint.x = newPointVec[0]
-                newPoint.y = newPointVec[1]
-                newPoint.theta = newPointVec[2]
-                self.objects_dict[object_name] = (newPoint, sumCoords_x + (object_map_pose.x*np.cos(theta_mid)),
-                                                    sumCoords_y + (object_map_pose.y*np.cos(theta_mid)),
-                                                    sumCoords_theta + (object_map_pose.theta*np.cos(theta_mid)),
-                                                     sumWeights + np.cos(theta_mid))
-        else:
-            self.objects_dict[object_name] = (object_map_pose, (object_map_pose.x*np.cos(theta_mid)),
-                                                (object_map_pose.y*np.cos(theta_mid)),
-                                                (object_map_pose.theta*np.cos(theta_mid)),
-                                                np.cos(theta_mid))
+            if object_name in self.objects_dict:
+                sumWeights = self.objects_dict[object_name][4]
+                sumCoords_theta = self.objects_dict[object_name][3]
+                sumCoords_y = self.objects_dict[object_name][2]
+                sumCoords_x = self.objects_dict[object_name][1]
+                prevPoint = self.objects_dict[object_name][0]
+                # don't average if the distance is nota number. 
+                if not(np.isnan(object_map_pose.x) and np.isnan(object_map_pose.y)):
+                    newPointVec = [(((object_map_pose.x*np.cos(theta_mid))+ sumCoords_x)/(sumWeights+np.cos(theta_mid))), 
+                                    (((object_map_pose.y*np.cos(theta_mid))+ sumCoords_y)/(sumWeights+np.cos(theta_mid))), 
+                                        (((object_map_pose.theta*np.cos(theta_mid))+ sumCoords_theta)/(sumWeights+np.cos(theta_mid)))]
+                    newPoint = Pose2D()
+                    newPoint.x = newPointVec[0]
+                    newPoint.y = newPointVec[1]
+                    newPoint.theta = newPointVec[2]
+                    self.objects_dict[object_name] = (newPoint, sumCoords_x + (object_map_pose.x*np.cos(theta_mid)),
+                                                        sumCoords_y + (object_map_pose.y*np.cos(theta_mid)),
+                                                        sumCoords_theta + (object_map_pose.theta*np.cos(theta_mid)),
+                                                         sumWeights + np.cos(theta_mid))
+            else:
+                self.objects_dict[object_name] = (object_map_pose, (object_map_pose.x*np.cos(theta_mid)),
+                                                    (object_map_pose.y*np.cos(theta_mid)),
+                                                    (object_map_pose.theta*np.cos(theta_mid)),
+                                                    np.cos(theta_mid))
 
-        marker = Marker()
-        marker.header.frame_id = "/map"
-        marker.type = marker.CYLINDER
-        marker.action = marker.ADD
-        marker.scale.x = 0.2
-        marker.scale.y = 0.2
-        marker.scale.z = 0.2
-        marker.color.a = 1.0
-        marker.color.r = 1.0
-        marker.color.g = 0.0
-        marker.color.b = 0.0
-        marker.pose.orientation.w = 1.0
-        marker.pose.position.x = self.objects_dict[object_name][0].x
-        marker.pose.position.y = self.objects_dict[object_name][0].y
-        marker.pose.position.z = 0
-        self.marker_array.markers.append(marker)
+            marker = Marker()
+            marker.header.frame_id = "/map"
+            marker.ns = object_name
+            #marker.id <- use this if we want more unique ids
+            marker.type = marker.CYLINDER
+            marker.action = marker.ADD
+            marker.scale.x = 0.2
+            marker.scale.y = 0.2
+            marker.scale.z = 0.2
+            marker.color.a = 1.0
+            marker.color.r = 1.0
+            marker.color.g = 0.0
+            marker.color.b = 0.0
+            marker.pose.orientation.w = 1.0
+            marker.pose.position.x = self.objects_dict[object_name][0].x
+            marker.pose.position.y = self.objects_dict[object_name][0].y
+            marker.pose.position.z = 0
+            self.marker_array.markers.append(marker)
+            print("adding marker at x: %d, y: %d", marker.pose.position.x, marker.pose.position.y)
 
-        self.marker_publisher.publish(self.marker_array)
+            self.marker_publisher.publish(self.marker_array)
     
 
     def delivery_request_callback(self,msg):
         label_list = msg.data.split(',')
         for label in label_list:
-            print "label:", label
+            self.debug_publisher.publish("label: " + label)
             self.goal_list.append(self.objects_dict[label][0])
         #reorder list to make optimal?
         self.goal_list.append(self.objects_dict[self.home_base])
@@ -311,6 +317,10 @@ class Supervisor:
         """ checks if the robot is at a pose within some threshold """
 
         return (abs(x-self.x)<POS_EPS and abs(y-self.y)<POS_EPS and abs(theta-self.theta)<THETA_EPS)
+
+    def close_to_delivery(self, x, y):
+
+        return (abs(x-self.x)<POS_EPS and abs(y-self.y)<POS_EPS)
 
     def init_stop_sign(self):
         """ initiates a stop sign maneuver """
@@ -362,7 +372,7 @@ class Supervisor:
                 euler = tf.transformations.euler_from_quaternion(rotation)
                 self.theta = euler[2]
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                print('tf error occured when looking up transform from /map to /base_footprint')
+                self.debug_publisher.publish('tf error occured when looking up transform from /map to /base_footprint')
                 pass
 
         # logs the current mode
@@ -397,26 +407,37 @@ class Supervisor:
                 self.nav_to_pose()
 
         elif self.mode == Mode.NAV:
-            while self.goal_list:
+            if self.goal_list:
                 goal = self.goal_list[0]
                 # print "Goal:", goal
                 self.x_g = goal.x
                 self.y_g = goal.y
                 self.theta_g = goal.theta
+                print("length of goal list: "+ str(len(self.goal_list)))
+                print("x,y,theta (goal) :: " + str(self.x_g) + " "+ str(self.y_g) + " " + str(self.theta_g))
+                print("x,y,theta (actual) :: " + str(self.x) + " "+ str(self.y) + " " + str(self.theta))
+                self.debug_publisher.publish("length of goal list: "+ str(len(self.goal_list)))
+                self.debug_publisher.publish("x,y,theta (goal) :: " + str(self.x_g) + " "+ str(self.y_g) + " " + str(self.theta_g))
+
+                self.debug_publisher.publish("x,y,theta (actual) :: " + str(self.x) + " "+ str(self.y) + " " + str(self.theta))
                 self.nav_to_pose()
-                if self.close_to(self.x_g,self.y_g,self.theta_g):
+                if self.close_to_delivery(self.x_g,self.y_g):
                     del self.goal_list[0]
-            self.mode = Mode.IDLE 
+            else:
+                self.mode = Mode.IDLE 
 
         elif self.mode == Mode.EXPLORE:
             # self.init_explore_start()
             if self.has_explored():
-                print "have explored"
+                print("have explored")
+                self.debug_publisher.publish("have explored")
                 self.mode = Mode.IDLE
             elif self.rviz_goal:
                 self.nav_to_pose()
                 # print(self.close_to(self.x_g,self.y_g,self.theta_g))
                 if self.close_to(self.x_g,self.y_g,self.theta_g):
+                    print("we are in explore and self.close_to returns true")
+                    self.debug_publisher.publish("we are in explore and self.close_to returns true")
                     self.rviz_goal = False
 
         else:

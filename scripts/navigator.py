@@ -35,7 +35,7 @@ THETA_START_P = 1
 V_MAX = .2
 
 # maximim angular velocity
-W_MAX = .4
+W_MAX = .3
 
 # desired crusing velocity
 V_DES = 0.12
@@ -108,6 +108,13 @@ class Navigator:
         rospy.Subscriber('/cmd_nav', Pose2D, self.cmd_nav_callback)
         rospy.Subscriber('puddle_world', PointStamped, self.puddle_callback)
         rospy.Subscriber('/clicked_point', PointStamped, self.manual_puddle_callback)
+        # rospy.Subscriber('/sup_request', Point, self.is_free_callback)
+
+    # def is_free_callback(self, msg):
+    #     x_point = msg.x
+    #     y_point = msg.y
+    #     z_point = msg.z
+        
 
     def cmd_nav_callback(self, data):
         self.x_g = data.x
@@ -131,7 +138,7 @@ class Navigator:
                                                   self.map_height,
                                                   self.map_origin[0],
                                                   self.map_origin[1],
-                                                  8,
+                                                  6,
                                                   self.map_probs)
             self.occupancy_updated = True
             
@@ -159,6 +166,11 @@ class Navigator:
             
     def publish_map_mod(self):
         self.astar_occupancy = copy.copy(self.occupancy)
+
+        #TARIQ EDIT: 
+        # replace all -1's with 69
+
+
         #self.conflate_obstacles()
         if self.puddle_list:
             self.puddle_to_occupancy()
@@ -272,7 +284,7 @@ class Navigator:
             #if self.puddle_list:
             #    self.puddle_to_occupancy()
             problem = AStar(state_min,state_max,x_init,x_goal,self.astar_occupancy,self.plan_resolution)
-            rospy.logwarn("Is x_init in obstacle?")
+            rospy.logwarn("Is x_init in collision-free?")
             rospy.logwarn(problem.is_free(x_init))
 
 

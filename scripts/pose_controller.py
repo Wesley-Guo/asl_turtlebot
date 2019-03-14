@@ -125,7 +125,7 @@ class PoseController:
             rho = linalg.norm(rel_coords) 
 
             if (rho < 0.03) & (th_rot < 0.08):
-                rospy.loginfo("Close to goal: commanding zero controls")
+                rospy.logwarn("Close to goal: commanding zero controls")
                 self.x_g = None
                 self.y_g = None
                 self.theta_g = None
