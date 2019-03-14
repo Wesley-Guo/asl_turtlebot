@@ -208,7 +208,7 @@ class Supervisor:
         pt.header.stamp = rospy.Time(0)
         pt.pose.position.x = dist*np.sin(theta_mid)
         pt.pose.position.y = 0
-        pt.pose.position.z = dist*np.cos(theta_mid)
+        pt.pose.position.z = dist*np.cos(theta_mid) - 0.2
         quat = tf.transformations.quaternion_from_euler(0,theta_mid,0)
         pt.pose.orientation.x = quat[0]
         pt.pose.orientation.y = quat[1]
@@ -234,9 +234,9 @@ class Supervisor:
             prevPoint = self.objects_dict[object_name][0]
             # don't average if the distance is nota number. 
             if not(np.isnan(object_map_pose.x) and np.isnan(object_map_pose.y)):
-                newPointVec = [(((object_map_pose.x*np.cos(theta_mid))+ sumCoords_x)/sumWeights), 
-                                (((object_map_pose.y*np.cos(theta_mid))+ sumCoords_y)/sumWeights), 
-                                    (((object_map_pose.theta*np.cos(theta_mid))+ sumCoords_theta)/sumWeights)]
+                newPointVec = [(((object_map_pose.x*np.cos(theta_mid))+ sumCoords_x)/(sumWeights+np.cos(theta_mid))), 
+                                (((object_map_pose.y*np.cos(theta_mid))+ sumCoords_y)/(sumWeights+np.cos(theta_mid))), 
+                                    (((object_map_pose.theta*np.cos(theta_mid))+ sumCoords_theta)/(sumWeights+np.cos(theta_mid)))]
                 newPoint = Pose2D()
                 newPoint.x = newPointVec[0]
                 newPoint.y = newPointVec[1]
