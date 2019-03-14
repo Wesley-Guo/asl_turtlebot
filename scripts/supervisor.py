@@ -46,6 +46,7 @@ class Mode(Enum):
     NAV = 5
     MANUAL = 6
     EXPLORE = 7
+    CAPTURE = 8
 
 print "supervisor settings:\n"
 print "use_gazebo = %s\n" % use_gazebo
@@ -404,6 +405,9 @@ class Supervisor:
                 self.mode = self.modeBeforeStop
             else:
                 self.nav_to_pose()
+        elif self.mode == Mode.CAPTURE:
+            rospy.sleep(1.0)
+            self.mode = Mode.NAV
 
         elif self.mode == Mode.NAV:
             if self.goal_list:
@@ -421,6 +425,7 @@ class Supervisor:
                 self.debug_publisher.publish("x,y,theta (actual) :: " + str(self.x) + " "+ str(self.y) + " " + str(self.theta))
                 self.nav_to_pose()
                 if self.close_to_delivery(self.x_g,self.y_g):
+                    self.mode = Mode.CAPTURE
                     del self.goal_list[0]
             else:
                 self.mode = Mode.IDLE 
